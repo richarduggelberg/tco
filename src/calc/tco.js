@@ -29,19 +29,25 @@ function percentile(sortedArr, p) {
 export function computeTco({ price, months, financingMethod, assumptions }) {
   const monthlyDiscountRate = annualToMonthlyRate(assumptions.discountRateAnnual);
   const yearlyRates = assumptions.depreciation.yearlyRates;
+  // Vid leasing äger användaren aldrig bilen - leasingbolaget bär värdeminsknings-
+  // och haveririsken, och tar normalt med fordonsskatt/service i leasingavgiften.
+  const isLeasing = financingMethod === "leasing";
+  const bundledInFee = isLeasing && assumptions.financing.leasing.taxAndServiceIncluded;
 
   const financing = financingCashflow(financingMethod, price, months, assumptions.financing);
   const energyMonthly = computeEnergyMonthly(assumptions.annualMileageKm, assumptions.running);
   const energy = buildConstantSeries(months, energyMonthly);
-  const tax = buildConstantSeries(months, assumptions.tax.annualAmount / 12);
+  const tax = buildConstantSeries(months, bundledInFee ? 0 : assumptions.tax.annualAmount / 12);
   const insurance = buildConstantSeries(months, assumptions.running.insuranceMonthly);
-  const service = buildConstantSeries(months, assumptions.running.serviceMonthly);
+  const service = buildConstantSeries(months, bundledInFee ? 0 : assumptions.running.serviceMonthly);
 
-  // Deterministisk bas: ingen risk inträffar, bilen åldras utan avbrott.
-  const baseValueSeries = buildValueSeries(price, months, yearlyRates, []);
-  const residual = buildResidualSeries(months, baseValueSeries[months]);
+  const categorySeries = { financing, energy, tax, insurance, service };
+  if (!isLeasing) {
+    // Deterministisk bas: ingen risk inträffar, bilen åldras utan avbrott.
+    const baseValueSeries = buildValueSeries(price, months, yearlyRates, []);
+    categorySeries.residual = buildResidualSeries(months, baseValueSeries[months]);
+  }
 
-  const categorySeries = { financing, energy, tax, insurance, service, residual };
   const categoryMonthly = {};
   for (const [name, series] of Object.entries(categorySeries)) {
     const npv = presentValue(series, monthlyDiscountRate);
@@ -50,7 +56,7 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
   const deterministicTotal = Object.values(categoryMonthly).reduce((a, b) => a + b, 0);
 
   let risk = null;
-  if (assumptions.risk.enabled) {
+  if (assumptions.risk.enabled && !isLeasing) {
     const paths = simulateRiskPaths(price, months, yearlyRates, assumptions.risk);
     const monthlyCosts = paths.map((path) => {
       const valueSeries = buildValueSeries(price, months, yearlyRates, path.resetMonths);

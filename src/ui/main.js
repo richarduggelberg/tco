@@ -9,6 +9,8 @@ const elomradeField = document.getElementById("elomrade-field");
 const financingMethodSelect = document.getElementById("financingMethod");
 const billanFields = document.getElementById("billan-fields");
 const bolanFields = document.getElementById("bolan-fields");
+const leasingFields = document.getElementById("leasing-fields");
+const elomradeSelect = document.getElementById("elomrade");
 
 const resultsSection = document.getElementById("results");
 const resultMonthlyEl = document.getElementById("result-monthly");
@@ -23,14 +25,19 @@ function updateVisibility() {
   elomradeField.classList.toggle("hidden", fuelTypeSelect.value !== "el");
   billanFields.classList.toggle("hidden", financingMethodSelect.value !== "billan");
   bolanFields.classList.toggle("hidden", financingMethodSelect.value !== "bolan");
+  leasingFields.classList.toggle("hidden", financingMethodSelect.value !== "leasing");
 }
 
-fuelTypeSelect.addEventListener("change", async () => {
+async function refreshElectricityPrice() {
+  liveElectricityPrice = await fetchAverageSpotPrice(elomradeSelect.value, defaultAssumptions.running.electricityPricePerKwh);
+}
+
+fuelTypeSelect.addEventListener("change", () => {
   updateVisibility();
-  if (fuelTypeSelect.value === "el" && liveElectricityPrice === null) {
-    const area = document.getElementById("elomrade").value;
-    liveElectricityPrice = await fetchAverageSpotPrice(area, defaultAssumptions.running.electricityPricePerKwh);
-  }
+  if (fuelTypeSelect.value === "el") refreshElectricityPrice();
+});
+elomradeSelect.addEventListener("change", () => {
+  if (fuelTypeSelect.value === "el") refreshElectricityPrice();
 });
 financingMethodSelect.addEventListener("change", updateVisibility);
 updateVisibility();
@@ -60,6 +67,9 @@ function readInputs() {
   assumptions.financing.bolan.downPaymentRatio = Number(document.getElementById("bolanDownPayment").value) / 100;
   assumptions.financing.bolan.interestRateAnnual = Number(document.getElementById("bolanRate").value) / 100;
   assumptions.financing.bolan.amortizationRateAnnual = Number(document.getElementById("bolanAmortization").value) / 100;
+  assumptions.financing.leasing.monthlyFee = Number(document.getElementById("leasingFee").value);
+  assumptions.financing.leasing.firstPaymentExtra = Number(document.getElementById("leasingFirstPayment").value);
+  assumptions.financing.leasing.taxAndServiceIncluded = document.getElementById("leasingIncluded").value === "true";
 
   assumptions.risk.enabled = document.getElementById("riskEnabled").value === "true";
   assumptions.risk.weibullScaleMonths = Number(document.getElementById("expectedLifeYears").value) * 12;
@@ -70,7 +80,7 @@ function readInputs() {
   return { price, months, financingMethod, assumptions };
 }
 
-function renderResults(result) {
+function renderResults(result, financingMethod) {
   resultsSection.classList.remove("hidden");
 
   const headline = result.risk ? result.risk.mean : result.deterministicTotal;
@@ -80,6 +90,8 @@ function renderResults(result) {
     resultIntervalEl.textContent =
       `80% av scenarierna hamnar mellan ${formatCurrency(result.risk.p10)} och ${formatCurrency(result.risk.p90)} / mån ` +
       `(${Math.round(result.risk.shareWithTotalLoss * 100)}% risk för minst ett totalhaveri under perioden)`;
+  } else if (financingMethod === "leasing") {
+    resultIntervalEl.textContent = "Vid leasing bärs värdeminsknings- och haveririsken av leasingbolaget.";
   } else {
     resultIntervalEl.textContent = "Haveririsk är avstängd i beräkningen.";
   }
@@ -129,5 +141,5 @@ form.addEventListener("submit", (event) => {
   event.preventDefault();
   const input = readInputs();
   const result = computeTco(input);
-  renderResults(result);
+  renderResults(result, input.financingMethod);
 });

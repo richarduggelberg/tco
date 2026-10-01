@@ -9,7 +9,7 @@
 <body>
   <header>
     <h1>Total ägandekostnad för bil</h1>
-    <p>Jämför kontantköp, billån och bolån – inklusive risk för dyra haverier</p>
+    <p>Jämför kontantköp, billån, bolån och privatleasing – inklusive risk för dyra haverier</p>
   </header>
 
   <main>
@@ -55,6 +55,7 @@
             <option value="kontant">Kontantköp</option>
             <option value="billan">Billån</option>
             <option value="bolan">Bolån (höjd belåning)</option>
+            <option value="leasing">Privatleasing</option>
           </select>
         </div>
         <div>
@@ -97,6 +98,28 @@
             <input type="number" id="bolanAmortization" value="1" min="0" max="10" step="0.1">
           </div>
         </div>
+      </fieldset>
+
+      <fieldset id="leasing-fields" class="hidden">
+        <legend>Privatleasing</legend>
+        <div class="grid">
+          <div>
+            <label for="leasingFee">Leasingavgift (kr/mån)</label>
+            <input type="number" id="leasingFee" value="4500" min="0" step="100">
+          </div>
+          <div>
+            <label for="leasingFirstPayment">Förhöjd första avgift (kr)</label>
+            <input type="number" id="leasingFirstPayment" value="0" min="0" step="1000">
+          </div>
+          <div>
+            <label for="leasingIncluded">Skatt &amp; service ingår i avgiften</label>
+            <select id="leasingIncluded">
+              <option value="true" selected>Ja</option>
+              <option value="false">Nej</option>
+            </select>
+          </div>
+        </div>
+        <p class="note">Fyll i en verklig leasingofferta (t.ex. från en återförsäljare eller en jämförelsesajt). Vid leasing äger du aldrig bilen - restvärde och haveririsk bärs av leasingbolaget och visas därför inte i uppdelningen nedan.</p>
       </fieldset>
 
       <h2>Löpande kostnader</h2>

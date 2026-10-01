@@ -69,6 +69,17 @@ export function bolanCashflow(price, months, { downPaymentRatio, interestRateAnn
   return cf;
 }
 
+/**
+ * Privatleasing: fast månadsavgift, ingen handpenning (ev. förhöjd första avgift).
+ * Användaren äger aldrig bilen - leasingbolaget bär värdeminsknings- och haveririsken,
+ * vilket hanteras i tco.js genom att restvärde och risk exkluderas för denna metod.
+ */
+export function leasingCashflow(months, { monthlyFee, firstPaymentExtra }) {
+  const cf = new Array(months + 1).fill(-monthlyFee);
+  cf[0] = -firstPaymentExtra;
+  return cf;
+}
+
 export function financingCashflow(method, price, months, financingAssumptions) {
   switch (method) {
     case "kontant":
@@ -77,6 +88,8 @@ export function financingCashflow(method, price, months, financingAssumptions) {
       return billanCashflow(price, months, financingAssumptions.billan);
     case "bolan":
       return bolanCashflow(price, months, financingAssumptions.bolan);
+    case "leasing":
+      return leasingCashflow(months, financingAssumptions.leasing);
     default:
       throw new Error(`Okänd finansieringsmetod: ${method}`);
   }

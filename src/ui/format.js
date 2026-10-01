@@ -9,7 +9,7 @@ const numberFormatter = new Intl.NumberFormat("sv-SE", {
 });
 
 export function formatCurrency(value) {
-  return currencyFormatter.format(value);
+  return currencyFormatter.format(value === 0 ? 0 : value);
 }
 
 export function formatNumber(value) {
@@ -17,7 +17,7 @@ export function formatNumber(value) {
 }
 
 export const categoryLabels = {
-  financing: "Finansiering (kapitalkostnad/lån)",
+  financing: "Finansiering (kapitalkostnad/lån/leasingavgift)",
   energy: "Bränsle/el",
   tax: "Fordonsskatt",
   insurance: "Försäkring",

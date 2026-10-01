@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { kontantCashflow, billanCashflow, bolanCashflow } from "../src/calc/financing.js";
+import { kontantCashflow, billanCashflow, bolanCashflow, leasingCashflow } from "../src/calc/financing.js";
 
 test("kontantCashflow pays full price at t=0 and nothing else", () => {
   const cf = kontantCashflow(300000, 24);
@@ -34,4 +34,17 @@ test("bolanCashflow applies interest-only-like low amortization, leaving balance
   assert.equal(Math.abs(cf[0]), 0);
   // With only 1%/year amortization over 2 years, most of the loan remains -> balance paid at t=months
   assert.ok(cf[24] < cf[12], "bolan cashflow at final month should include remaining debt settlement");
+});
+
+test("leasingCashflow charges a level monthly fee with no residual/ownership cashflow", () => {
+  const cf = leasingCashflow(36, { monthlyFee: 4500, firstPaymentExtra: 0 });
+  assert.equal(cf.length, 37);
+  assert.equal(Math.abs(cf[0]), 0);
+  assert.ok(cf.slice(1).every((v) => v === -4500));
+});
+
+test("leasingCashflow applies an extra first payment on top of the regular fee", () => {
+  const cf = leasingCashflow(12, { monthlyFee: 4000, firstPaymentExtra: 15000 });
+  assert.equal(cf[0], -15000);
+  assert.equal(cf[1], -4000);
 });

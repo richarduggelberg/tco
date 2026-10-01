@@ -43,3 +43,29 @@ test("computeTco supports all three financing methods without throwing", () => {
     assert.ok(Number.isFinite(result.deterministicTotal));
   }
 });
+
+test("computeTco with leasing excludes residual value and haveririsk entirely", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = true; // Should be ignored for leasing regardless
+  const result = computeTco({ price: 300000, months: 36, financingMethod: "leasing", assumptions });
+  assert.equal(result.risk, null);
+  assert.ok(!("residual" in result.categoryMonthly));
+});
+
+test("computeTco with leasing zeroes tax/service when bundled in the fee", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = false;
+  assumptions.financing.leasing.taxAndServiceIncluded = true;
+  const result = computeTco({ price: 300000, months: 36, financingMethod: "leasing", assumptions });
+  assert.equal(Math.abs(result.categoryMonthly.tax), 0);
+  assert.equal(Math.abs(result.categoryMonthly.service), 0);
+});
+
+test("computeTco with leasing keeps tax/service as separate costs when not bundled", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = false;
+  assumptions.financing.leasing.taxAndServiceIncluded = false;
+  const result = computeTco({ price: 300000, months: 36, financingMethod: "leasing", assumptions });
+  assert.ok(result.categoryMonthly.tax > 0);
+  assert.ok(result.categoryMonthly.service > 0);
+});

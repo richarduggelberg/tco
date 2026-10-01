@@ -27,6 +27,11 @@ export const defaultAssumptions = {
       interestRateAnnual: 0.035,
       amortizationRateAnnual: 0.01, // Enligt amorteringskravet, 1% eller 2% beroende på belåningsgrad
     },
+    leasing: {
+      monthlyFee: 4500, // Schablon - ersätt med en verklig privatleasingoffert
+      firstPaymentExtra: 0, // "Förhöjd leasingavgift" vid tecknande, om tillämpligt
+      taxAndServiceIncluded: true, // Vanligt i privatleasingerbjudanden
+    },
   },
 
   // Drift
