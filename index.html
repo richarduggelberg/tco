@@ -1,11 +1,182 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="sv">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TCO</title>
+  <title>TCO-kalkylator för bil</title>
+  <link rel="stylesheet" href="./src/ui/styles.css">
 </head>
 <body>
-  <h1>tco</h1>
+  <header>
+    <h1>Total ägandekostnad för bil</h1>
+    <p>Jämför kontantköp, billån och bolån – inklusive risk för dyra haverier</p>
+  </header>
+
+  <main>
+    <form id="tco-form" class="card">
+      <h2>Fordon &amp; användning</h2>
+      <div class="grid">
+        <div>
+          <label for="price">Inköpspris (kr)</label>
+          <input type="number" id="price" value="300000" min="1000" step="1000" required>
+        </div>
+        <div>
+          <label for="holdingYears">Innehavstid (år)</label>
+          <input type="number" id="holdingYears" value="5" min="1" max="20" step="1" required>
+        </div>
+        <div>
+          <label for="annualMileage">Körsträcka per år (km)</label>
+          <input type="number" id="annualMileage" value="15000" min="0" step="500" required>
+        </div>
+        <div>
+          <label for="fuelType">Drivmedel</label>
+          <select id="fuelType">
+            <option value="bensin">Bensin</option>
+            <option value="diesel">Diesel</option>
+            <option value="el">El</option>
+          </select>
+        </div>
+        <div id="elomrade-field" class="hidden">
+          <label for="elomrade">Elområde</label>
+          <select id="elomrade">
+            <option value="SE1">SE1 (Norra Sverige)</option>
+            <option value="SE2">SE2 (Norra Mellansverige)</option>
+            <option value="SE3" selected>SE3 (Södra Mellansverige)</option>
+            <option value="SE4">SE4 (Södra Sverige)</option>
+          </select>
+        </div>
+      </div>
+
+      <h2>Finansiering</h2>
+      <div class="grid">
+        <div>
+          <label for="financingMethod">Finansieringsmetod</label>
+          <select id="financingMethod">
+            <option value="kontant">Kontantköp</option>
+            <option value="billan">Billån</option>
+            <option value="bolan">Bolån (höjd belåning)</option>
+          </select>
+        </div>
+        <div>
+          <label for="discountRate">Alternativkostnad för kapital (%/år)</label>
+          <input type="number" id="discountRate" value="5" min="0" max="20" step="0.1">
+        </div>
+      </div>
+
+      <fieldset id="billan-fields" class="hidden">
+        <legend>Billån</legend>
+        <div class="grid">
+          <div>
+            <label for="billanDownPayment">Kontantinsats (%)</label>
+            <input type="number" id="billanDownPayment" value="20" min="0" max="100" step="1">
+          </div>
+          <div>
+            <label for="billanRate">Ränta (%/år)</label>
+            <input type="number" id="billanRate" value="7" min="0" max="25" step="0.1">
+          </div>
+          <div>
+            <label for="billanTerm">Löptid (år)</label>
+            <input type="number" id="billanTerm" value="5" min="1" max="15" step="1">
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset id="bolan-fields" class="hidden">
+        <legend>Bolån</legend>
+        <div class="grid">
+          <div>
+            <label for="bolanDownPayment">Kontantinsats (%)</label>
+            <input type="number" id="bolanDownPayment" value="0" min="0" max="100" step="1">
+          </div>
+          <div>
+            <label for="bolanRate">Ränta (%/år)</label>
+            <input type="number" id="bolanRate" value="3.5" min="0" max="15" step="0.1">
+          </div>
+          <div>
+            <label for="bolanAmortization">Amortering (%/år)</label>
+            <input type="number" id="bolanAmortization" value="1" min="0" max="10" step="0.1">
+          </div>
+        </div>
+      </fieldset>
+
+      <h2>Löpande kostnader</h2>
+      <div class="grid">
+        <div>
+          <label for="insuranceMonthly">Försäkring (kr/mån)</label>
+          <input type="number" id="insuranceMonthly" value="500" min="0" step="50">
+        </div>
+        <div>
+          <label for="serviceMonthly">Service, däck, besiktning (kr/mån)</label>
+          <input type="number" id="serviceMonthly" value="400" min="0" step="50">
+        </div>
+        <div>
+          <label for="taxAnnual">Fordonsskatt (kr/år)</label>
+          <input type="number" id="taxAnnual" value="2000" min="0" step="100">
+        </div>
+      </div>
+
+      <details>
+        <summary>Avancerat: haveririsk &amp; värdeminskning</summary>
+        <div class="grid" style="margin-top: 1rem;">
+          <div>
+            <label for="riskEnabled">Räkna med haveririsk</label>
+            <select id="riskEnabled">
+              <option value="true" selected>Ja</option>
+              <option value="false">Nej</option>
+            </select>
+          </div>
+          <div>
+            <label for="expectedLifeYears">Förväntad livslängd (år)</label>
+            <input type="number" id="expectedLifeYears" value="15" min="1" max="40" step="1">
+          </div>
+          <div>
+            <label for="repairCostMedian">Typisk allvarlig reparationskostnad (kr)</label>
+            <input type="number" id="repairCostMedian" value="25000" min="0" step="1000">
+          </div>
+          <div>
+            <label for="totalLossThreshold">Totalhaveri-tröskel (% av bilvärde)</label>
+            <input type="number" id="totalLossThreshold" value="50" min="10" max="100" step="5">
+          </div>
+          <div>
+            <label for="reliabilityFactor">Tillförlitlighetsfaktor (1 = snitt)</label>
+            <input type="number" id="reliabilityFactor" value="1.0" min="0.3" max="3" step="0.1">
+          </div>
+        </div>
+        <p class="note">Haveririsken beräknas med en Monte Carlo-simulering (ökande haverisannolikhet med
+          ålder). Modellen antar att ett ekonomiskt totalhaveri innebär att en likvärdig bil köps in igen till
+          dess dåvarande marknadsvärde, vilket nollställer åldern i simuleringen för resten av innehavsperioden.</p>
+      </details>
+
+      <button type="submit">Beräkna</button>
+    </form>
+
+    <section id="results" class="hidden">
+      <div class="card result-headline">
+        <div class="label">Jämförbar månadskostnad</div>
+        <div class="value" id="result-monthly">–</div>
+        <div class="risk-interval" id="result-interval"></div>
+      </div>
+
+      <div class="card">
+        <h2>Kostnadsuppdelning per månad</h2>
+        <table>
+          <thead>
+            <tr><th>Post</th><th>Kr/månad</th></tr>
+          </thead>
+          <tbody id="breakdown-body"></tbody>
+        </table>
+        <canvas id="breakdown-chart" height="140"></canvas>
+      </div>
+
+      <p class="note">
+        Beräkningen nuvärdesberäknar alla kassaflöden (köpeskilling/handpenning, lånebetalningar, löpande
+        kostnader, haverikostnader och restvärde) med samma diskonteringsränta och konverterar till en
+        nivålagd (jämn) månadskostnad – detta gör kontantköp, lån och olika innehavstider rättvist jämförbara.
+      </p>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <script type="module" src="./src/ui/main.js"></script>
 </body>
 </html>
