@@ -1,7 +1,7 @@
 import { computeTco, computeLifetimeMonthlyCosts } from "../calc/tco.js";
 import { impliedNewPrice } from "../calc/depreciation.js";
 import { defaultAssumptions, fuelTypeDefaults } from "../data/assumptions.js";
-import { formatCurrency, categoryLabels } from "./format.js";
+import { formatCurrency, categoryLabels, formatThousands, parseThousands } from "./format.js";
 
 const form = document.getElementById("tco-form");
 const fuelTypeSelect = document.getElementById("fuelType");
@@ -58,7 +58,7 @@ function updateVisibility() {
 }
 
 function updateImpliedNewPriceNote() {
-  const price = Number(priceInput.value);
+  const price = parseThousands(priceInput.value);
   const ageYears = Number(ageAtPurchaseInput.value);
   if (!ageYears || !price) {
     impliedNewPriceNote.classList.add("hidden");
@@ -86,6 +86,30 @@ fuelTypeSelect.addEventListener("change", () => {
   applyFuelTypeDefaults();
 });
 financingMethodSelect.addEventListener("change", updateVisibility);
+
+// Formaterar om inköpspris-fältet med mellanslag som tusentalsavgränsare medan man skriver,
+// och återställer textmarkören till motsvarande siffer-position efter omformateringen.
+function enableThousandsInput(id) {
+  const input = document.getElementById(id);
+  if (!input) return;
+  input.addEventListener("input", () => {
+    const digitsBeforeCursor = input.value.slice(0, input.selectionStart).replace(/\D/g, "").length;
+    const formatted = formatThousands(input.value);
+    input.value = formatted;
+    let digitsSeen = 0;
+    let newPos = formatted.length;
+    for (let i = 0; i < formatted.length; i++) {
+      if (digitsSeen === digitsBeforeCursor) {
+        newPos = i;
+        break;
+      }
+      if (/\d/.test(formatted[i])) digitsSeen++;
+    }
+    input.setSelectionRange(newPos, newPos);
+  });
+}
+enableThousandsInput("price");
+
 priceInput.addEventListener("input", updateImpliedNewPriceNote);
 ageAtPurchaseInput.addEventListener("input", updateImpliedNewPriceNote);
 updateVisibility();
@@ -112,7 +136,7 @@ function enableDatalistBrowsing(id) {
 function readInputs() {
   const assumptions = JSON.parse(JSON.stringify(defaultAssumptions));
 
-  const price = Number(document.getElementById("price").value);
+  const price = parseThousands(document.getElementById("price").value);
   const holdingYears = Number(document.getElementById("holdingYears").value);
   const months = Math.round(holdingYears * 12);
 

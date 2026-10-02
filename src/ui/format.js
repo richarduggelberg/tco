@@ -16,6 +16,19 @@ export function formatNumber(value) {
   return numberFormatter.format(value);
 }
 
+/** Formaterar en siffersträng med mellanslag som tusentalsavgränsare, t.ex. "300000" -> "300 000". */
+export function formatThousands(value) {
+  const digits = String(value).replace(/\D/g, "");
+  if (!digits) return "";
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+}
+
+/** Tolkar en (ev. mellanslagsformaterad) siffersträng tillbaka till ett tal. */
+export function parseThousands(value) {
+  const digits = String(value).replace(/\D/g, "");
+  return digits ? Number(digits) : 0;
+}
+
 export const categoryLabels = {
   leasingavgift: "Leasingavgift",
   kapitalkostnad: "Kapitalkostnad (alternativkostnad på bundet kapital)",
