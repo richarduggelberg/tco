@@ -349,14 +349,18 @@
         <p class="note">
           Visar en nominell (ej nuvärdesberäknad) månadskostnadskurva för bilen sett över hela dess liv
           sedan tillverkning. Drift- och åldersrelaterade poster (skatt, försäkring, bränsle/el, service,
-          däck, värdeminskning) visas genom hela kurvan; finansieringskostnaden (kapitalkostnad/låneränta/
-          leasingavgift) läggs bara på under den markerade ägandeperioden. Totalkurvan inkluderar även den
-          förväntade riskkostnaden (streckad linje) - sannolikheten för ett dyrt haveri/totalhaveri ökar med
-          åldern, och vid ett totalhaveri antas bilen ersättas med en likvärdig bil till samma pris som
-          angetts ovan, vilket gör att totalkostnaden kan börja stiga igen vid hög ålder trots att
-          värdeminskningen då är låg. De blå linjerna markerar vid vilken ålder sannolikheten att bilen
-          ännu inte haft ett ekonomiskt totalhaveri har sjunkit till 50/25/10/5/1%, baserat på
-          haveririsk-antagandena under Avancerat.
+          däck, värdeminskning, kapitalkostnad som om bilen vore kontantköpt) visas kontinuerligt genom
+          hela kurvan, oavsett vem som äger bilen just då. Under din egen markerade ägandeperiod byts
+          kapitalkostnaden ut mot din valda finansieringsmetods faktiska kostnad (ränta minus/plus
+          alternativkostnaden), vilket bara ger ett hopp vid Köp/Säljs om din metod skiljer sig från ett
+          kontantköp (t.ex. ett lån med högre ränta än alternativkostnaden). Vid leasing byts värdeminskning,
+          kapitalkostnad och risk ut mot leasingavgiften istället, eftersom leasingbolaget bär dem. Totalkurvan
+          inkluderar även den förväntade riskkostnaden (streckad linje) - sannolikheten för ett dyrt
+          haveri/totalhaveri ökar med åldern, och vid ett totalhaveri antas bilen ersättas med en likvärdig
+          bil till samma pris som angetts ovan, vilket gör att totalkostnaden kan börja stiga igen vid hög
+          ålder trots att värdeminskningen då är låg. De blå linjerna markerar vid vilken ålder
+          sannolikheten att bilen ännu inte haft ett ekonomiskt totalhaveri har sjunkit till 50/25/10/5/1%,
+          baserat på haveririsk-antagandena under Avancerat.
         </p>
         <canvas id="lifetime-chart" height="140"></canvas>
       </div>

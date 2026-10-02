@@ -267,3 +267,14 @@ test("computeLifetimeMonthlyCosts: expected risk cost grows with age and eventua
   const lastTotal = result.monthlyCost[result.monthlyCost.length - 1];
   assert.ok(lastTotal > minTotal, "near the end of the computed life, rising risk cost should push the total back up above its minimum");
 });
+
+test("computeLifetimeMonthlyCosts: for a cash purchase, the curve is continuous across the Köp/Säljs boundaries (regression: capital cost used to jump from 0 outside ownership to the owner's cost inside it)", () => {
+  const assumptions = cloneAssumptions();
+  const shortOwnership = computeLifetimeMonthlyCosts({ price: 300000, months: 36, financingMethod: "kontant", assumptions });
+  const longOwnership = computeLifetimeMonthlyCosts({ price: 300000, months: 84, financingMethod: "kontant", assumptions });
+  // For kontant, owning the car or not shouldn't change its generic monthly cost at a given age -
+  // the whole point of the fix is that capital cost is now a continuous, ownership-independent baseline.
+  for (let i = 0; i < Math.min(shortOwnership.monthlyCost.length, longOwnership.monthlyCost.length); i++) {
+    assert.ok(Math.abs(shortOwnership.monthlyCost[i] - longOwnership.monthlyCost[i]) < 1e-6, `monthlyCost should match at index ${i} regardless of ownership duration`);
+  }
+});
