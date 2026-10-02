@@ -1,5 +1,6 @@
 import { computeTco } from "../calc/tco.js";
-import { defaultAssumptions } from "../data/assumptions.js";
+import { impliedNewPrice } from "../calc/depreciation.js";
+import { defaultAssumptions, fuelTypeDefaults } from "../data/assumptions.js";
 import { fetchAverageSpotPrice } from "../data/elpris.js";
 import { formatCurrency, categoryLabels } from "./format.js";
 
@@ -11,6 +12,9 @@ const billanFields = document.getElementById("billan-fields");
 const bolanFields = document.getElementById("bolan-fields");
 const leasingFields = document.getElementById("leasing-fields");
 const elomradeSelect = document.getElementById("elomrade");
+const priceInput = document.getElementById("price");
+const ageAtPurchaseInput = document.getElementById("ageAtPurchase");
+const impliedNewPriceNote = document.getElementById("implied-newprice-note");
 
 const resultsSection = document.getElementById("results");
 const resultMonthlyEl = document.getElementById("result-monthly");
@@ -32,15 +36,43 @@ async function refreshElectricityPrice() {
   liveElectricityPrice = await fetchAverageSpotPrice(elomradeSelect.value, defaultAssumptions.running.electricityPricePerKwh);
 }
 
+function updateImpliedNewPriceNote() {
+  const price = Number(priceInput.value);
+  const ageYears = Number(ageAtPurchaseInput.value);
+  if (!ageYears || !price) {
+    impliedNewPriceNote.classList.add("hidden");
+    return;
+  }
+  const newPrice = impliedNewPrice(price, Math.round(ageYears * 12), defaultAssumptions.depreciation.yearlyRates);
+  impliedNewPriceNote.textContent = `Uppskattat nypris (baklängesräknat från värdeminskningskurvan): ~${formatCurrency(newPrice)}`;
+  impliedNewPriceNote.classList.remove("hidden");
+}
+
+/** Fyller i rimliga standardvärden för skatt/haveririsk baserat på valt drivmedel. */
+function applyFuelTypeDefaults() {
+  const defaults = fuelTypeDefaults[fuelTypeSelect.value];
+  if (!defaults) return;
+  document.getElementById("taxMalusAnnual").value = defaults.tax.malusAnnualAmount;
+  document.getElementById("taxNormalAnnual").value = defaults.tax.normalAnnualAmount;
+  document.getElementById("taxMalusYears").value = defaults.tax.malusYears;
+  document.getElementById("expectedLifeYears").value = Math.round(defaults.risk.weibullScaleMonths / 12);
+  document.getElementById("repairCostMedian").value = defaults.risk.repairCostMedian;
+  document.getElementById("reliabilityFactor").value = defaults.risk.reliabilityFactor;
+}
+
 fuelTypeSelect.addEventListener("change", () => {
   updateVisibility();
   if (fuelTypeSelect.value === "el") refreshElectricityPrice();
+  applyFuelTypeDefaults();
 });
 elomradeSelect.addEventListener("change", () => {
   if (fuelTypeSelect.value === "el") refreshElectricityPrice();
 });
 financingMethodSelect.addEventListener("change", updateVisibility);
+priceInput.addEventListener("input", updateImpliedNewPriceNote);
+ageAtPurchaseInput.addEventListener("input", updateImpliedNewPriceNote);
 updateVisibility();
+updateImpliedNewPriceNote();
 
 function readInputs() {
   const assumptions = JSON.parse(JSON.stringify(defaultAssumptions));
@@ -52,6 +84,8 @@ function readInputs() {
   assumptions.annualMileageKm = Number(document.getElementById("annualMileage").value);
   assumptions.discountRateAnnual = Number(document.getElementById("discountRate").value) / 100;
   assumptions.ageAtPurchaseYears = Number(document.getElementById("ageAtPurchase").value);
+  assumptions.vehicleAge.baselineAnnualMileageKm = Number(document.getElementById("baselineAnnualMileage").value);
+  assumptions.vehicleAge.mileageWeight = Number(document.getElementById("mileageWeight").value) / 100;
 
   assumptions.running.fuelType = fuelTypeSelect.value;
   if (fuelTypeSelect.value === "el" && liveElectricityPrice !== null) {
@@ -62,7 +96,9 @@ function readInputs() {
   assumptions.insurance.helStartYears = Number(document.getElementById("insuranceHelStart").value);
   assumptions.insurance.helEndYears = Number(document.getElementById("insuranceHelEnd").value);
   assumptions.running.serviceMonthly = Number(document.getElementById("serviceMonthly").value);
-  assumptions.tax.annualAmount = Number(document.getElementById("taxAnnual").value);
+  assumptions.tax.malusAnnualAmount = Number(document.getElementById("taxMalusAnnual").value);
+  assumptions.tax.normalAnnualAmount = Number(document.getElementById("taxNormalAnnual").value);
+  assumptions.tax.malusYears = Number(document.getElementById("taxMalusYears").value);
   assumptions.tires.setCost = Number(document.getElementById("tireSetCost").value);
   assumptions.tires.winterIntervalYears = Number(document.getElementById("winterTireInterval").value);
   assumptions.tires.summerIntervalYears = Number(document.getElementById("summerTireInterval").value);
@@ -76,7 +112,7 @@ function readInputs() {
   assumptions.financing.bolan.amortizationRateAnnual = Number(document.getElementById("bolanAmortization").value) / 100;
   assumptions.financing.leasing.monthlyFee = Number(document.getElementById("leasingFee").value);
   assumptions.financing.leasing.firstPaymentExtra = Number(document.getElementById("leasingFirstPayment").value);
-  assumptions.financing.leasing.taxAndServiceIncluded = document.getElementById("leasingIncluded").value === "true";
+  assumptions.financing.leasing.serviceIncluded = document.getElementById("leasingServiceIncluded").value === "true";
   assumptions.financing.leasing.winterTiresIncluded = document.getElementById("leasingWinterTires").value === "true";
 
   assumptions.risk.enabled = document.getElementById("riskEnabled").value === "true";

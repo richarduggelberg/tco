@@ -37,6 +37,15 @@ function insuranceMonthlyCost(calendarAgeYears, insurance) {
 }
 
 /**
+ * Fordonsskatt för en given månad (bonus-malus): förhöjd skatt (malus) de första
+ * tax.malusYears kalenderåren sedan tillverkning, därefter normalnivå.
+ */
+function taxMonthlyCost(calendarAgeYears, tax) {
+  const annual = calendarAgeYears < tax.malusYears ? tax.malusAnnualAmount : tax.normalAnnualAmount;
+  return annual / 12;
+}
+
+/**
  * Beräknar jämförbar månadskostnad (nivålagd annuitet av nuvärdet) för ett fordon,
  * given finansieringsmetod och antaganden. Inkluderar en Monte Carlo-baserad
  * haveririsk om assumptions.risk.enabled är true.
@@ -48,20 +57,28 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
   const monthlyDiscountRate = annualToMonthlyRate(assumptions.discountRateAnnual);
   const yearlyRates = assumptions.depreciation.yearlyRates;
   const ageAtPurchaseMonths = Math.round((assumptions.ageAtPurchaseYears ?? 0) * 12);
+  // Körsträcka blandas in i bilens "åldrande" (värdeminskning OCH haveririsk): en bil som
+  // körs mer än baslinjen åldras snabbare per kalendermånad, och en lågkörd bil långsammare.
+  const { baselineAnnualMileageKm, mileageWeight } = assumptions.vehicleAge;
+  const mileageRatio = assumptions.annualMileageKm / baselineAnnualMileageKm;
+  const ageRateMultiplier = mileageWeight * mileageRatio + (1 - mileageWeight);
   // Vid leasing äger användaren aldrig bilen - leasingbolaget bär värdeminsknings-
-  // och haveririsken, och tar normalt med fordonsskatt/service i leasingavgiften.
+  // och haveririsken, och tar normalt med service i leasingavgiften. Fordonsskatt
+  // ingår däremot i princip aldrig i leasingavgiften utan betalas separat.
   const isLeasing = financingMethod === "leasing";
-  const bundledInFee = isLeasing && assumptions.financing.leasing.taxAndServiceIncluded;
+  const serviceBundled = isLeasing && assumptions.financing.leasing.serviceIncluded;
   const winterTiresBundled = isLeasing && assumptions.financing.leasing.winterTiresIncluded;
 
   const financing = financingCashflow(financingMethod, price, months, assumptions.financing);
   const energyMonthly = computeEnergyMonthly(assumptions.annualMileageKm, assumptions.running);
   const energy = buildConstantSeries(months, energyMonthly);
-  const tax = buildConstantSeries(months, bundledInFee ? 0 : assumptions.tax.annualAmount / 12);
+  const tax = buildSeriesFromFunction(months, (t) =>
+    taxMonthlyCost((ageAtPurchaseMonths + t) / 12, assumptions.tax)
+  );
   const insurance = buildSeriesFromFunction(months, (t) =>
     insuranceMonthlyCost((ageAtPurchaseMonths + t) / 12, assumptions.insurance)
   );
-  const service = buildConstantSeries(months, bundledInFee ? 0 : assumptions.running.serviceMonthly);
+  const service = buildConstantSeries(months, serviceBundled ? 0 : assumptions.running.serviceMonthly);
 
   const winterTires = winterTiresBundled
     ? buildPeriodicCostSeries(months, 0, 0)
@@ -72,7 +89,7 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
   const categorySeries = { financing, energy, tax, insurance, service, tires };
   if (!isLeasing) {
     // Deterministisk bas: ingen risk inträffar, bilen åldras utan avbrott.
-    const baseValueSeries = buildValueSeries(price, months, yearlyRates, [], ageAtPurchaseMonths);
+    const baseValueSeries = buildValueSeries(price, months, yearlyRates, [], ageAtPurchaseMonths, ageRateMultiplier);
     categorySeries.residual = buildResidualSeries(months, baseValueSeries[months]);
   }
 
@@ -85,9 +102,9 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
 
   let risk = null;
   if (assumptions.risk.enabled && !isLeasing) {
-    const paths = simulateRiskPaths(price, months, yearlyRates, assumptions.risk, ageAtPurchaseMonths);
+    const paths = simulateRiskPaths(price, months, yearlyRates, assumptions.risk, ageAtPurchaseMonths, ageRateMultiplier);
     const monthlyCosts = paths.map((path) => {
-      const valueSeries = buildValueSeries(price, months, yearlyRates, path.resetMonths, ageAtPurchaseMonths);
+      const valueSeries = buildValueSeries(price, months, yearlyRates, path.resetMonths, ageAtPurchaseMonths, ageRateMultiplier);
       const pathResidual = buildResidualSeries(months, valueSeries[months]);
       const total = sumSeries([financing, energy, tax, insurance, service, tires, pathResidual, path.cashflow]);
       const npv = presentValue(total, monthlyDiscountRate);

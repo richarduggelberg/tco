@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { valueAtAge, buildValueSeries } from "../src/calc/depreciation.js";
+import { valueAtAge, buildValueSeries, impliedNewPrice } from "../src/calc/depreciation.js";
 
 test("valueAtAge at age 0 equals initial value", () => {
   assert.equal(valueAtAge(300000, 0, [0.2, 0.15]), 300000);
@@ -64,4 +64,32 @@ test("buildValueSeries threads ageAtPurchaseMonths through resets (rebuying the 
   // at the same original calendar age (not a brand new car).
   assert.ok(Math.abs(series[12] - valueAtAge(100000, 0, rates, ageAtPurchaseMonths)) < 1e-6);
   assert.ok(Math.abs(series[24] - valueAtAge(100000, 12, rates, ageAtPurchaseMonths)) < 1e-6);
+});
+
+test("buildValueSeries with ageRateMultiplier=1 is unchanged from the default", () => {
+  const rates = [0.2, 0.15, 0.12, 0.1];
+  const withDefault = buildValueSeries(100000, 24, rates, [12], 0);
+  const withExplicitOne = buildValueSeries(100000, 24, rates, [12], 0, 1);
+  assert.deepEqual(withExplicitOne, withDefault);
+});
+
+test("buildValueSeries with a higher ageRateMultiplier (more mileage) depreciates faster", () => {
+  const rates = [0.2, 0.15, 0.12, 0.1];
+  const baseline = buildValueSeries(100000, 24, rates, [], 0, 1);
+  const highMileage = buildValueSeries(100000, 24, rates, [], 0, 1.5);
+  assert.ok(highMileage[24] < baseline[24], "a car driven more than baseline should be worth less at the same calendar age");
+});
+
+test("impliedNewPrice returns the input price unchanged when ageAtPurchaseMonths is 0", () => {
+  const rates = [0.2, 0.15, 0.12, 0.1];
+  assert.equal(impliedNewPrice(100000, 0, rates), 100000);
+});
+
+test("impliedNewPrice inverts valueAtAge (round-trip)", () => {
+  const rates = [0.2, 0.15, 0.12, 0.1, 0.08];
+  const newPrice = 300000;
+  const ageAtPurchaseMonths = 36;
+  const priceAtAge = valueAtAge(newPrice, ageAtPurchaseMonths, rates);
+  const recoveredNewPrice = impliedNewPrice(priceAtAge, ageAtPurchaseMonths, rates);
+  assert.ok(Math.abs(recoveredNewPrice - newPrice) < 1e-6);
 });

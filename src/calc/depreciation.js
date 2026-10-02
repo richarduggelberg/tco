@@ -26,6 +26,20 @@ function remainingValueFactor(totalAgeMonths, yearlyRates) {
 }
 
 /**
+ * Räknar baklänges från ett känt pris vid en given kalenderålder till det implicita
+ * nypriset, genom att invertera värdeminskningskurvan. Används för att visa ett
+ * uppskattat "nypris" när användaren anger ett inköpspris för en redan begagnad bil.
+ * @param {number} priceAtAge - Känt pris vid ageAtPurchaseMonths
+ * @param {number} ageAtPurchaseMonths - Bilens kalenderålder vid det kända priset
+ * @param {number[]} yearlyRates
+ * @returns {number} Uppskattat pris vid ålder 0 (nypris)
+ */
+export function impliedNewPrice(priceAtAge, ageAtPurchaseMonths, yearlyRates) {
+  if (ageAtPurchaseMonths <= 0) return priceAtAge;
+  return priceAtAge / remainingValueFactor(ageAtPurchaseMonths, yearlyRates);
+}
+
+/**
  * Beräknar bilens värde vid en given ålder (i månader sedan referenspunkten), baserat
  * på en lista av årliga värdeminskningstakter (år 1, år 2, ... sedan TILLVERKNING).
  * Efter listans slut används det sista värdet för alla efterföljande år.
@@ -54,9 +68,11 @@ export function valueAtAge(initialValue, ageMonths, yearlyRates, ageAtReferenceM
  * @param {number[]} yearlyRates
  * @param {number[]} resetMonths - Sorterad lista av månadsindex där åldern nollställs
  * @param {number} ageAtPurchaseMonths - Bilens kalenderålder vid ursprungligt köp (0 = nyköpt)
+ * @param {number} ageRateMultiplier - Hur snabbt bilen "åldras" per kalendermånad (1 = normalt,
+ *   >1 för en högkörd bil, <1 för en lågkörd bil - se vehicleAge-antagandena)
  * @returns {number[]} Längd months+1
  */
-export function buildValueSeries(initialValue, months, yearlyRates, resetMonths = [], ageAtPurchaseMonths = 0) {
+export function buildValueSeries(initialValue, months, yearlyRates, resetMonths = [], ageAtPurchaseMonths = 0, ageRateMultiplier = 1) {
   const series = new Array(months + 1);
   let lastReset = 0;
   let resetIdx = 0;
@@ -65,7 +81,7 @@ export function buildValueSeries(initialValue, months, yearlyRates, resetMonths 
       lastReset = t;
       resetIdx++;
     }
-    series[t] = valueAtAge(initialValue, t - lastReset, yearlyRates, ageAtPurchaseMonths);
+    series[t] = valueAtAge(initialValue, (t - lastReset) * ageRateMultiplier, yearlyRates, ageAtPurchaseMonths);
   }
   return series;
 }

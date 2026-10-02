@@ -23,6 +23,7 @@
         <div>
           <label for="ageAtPurchase">Ålder vid köp (år)</label>
           <input type="number" id="ageAtPurchase" value="0" min="0" max="30" step="0.5">
+          <p class="note hidden" id="implied-newprice-note"></p>
         </div>
         <div>
           <label for="holdingYears">Innehavstid (år)</label>
@@ -116,8 +117,8 @@
             <input type="number" id="leasingFirstPayment" value="0" min="0" step="1000">
           </div>
           <div>
-            <label for="leasingIncluded">Skatt &amp; service ingår i avgiften</label>
-            <select id="leasingIncluded">
+            <label for="leasingServiceIncluded">Service ingår i avgiften</label>
+            <select id="leasingServiceIncluded">
               <option value="true" selected>Ja</option>
               <option value="false">Nej</option>
             </select>
@@ -130,7 +131,7 @@
             </select>
           </div>
         </div>
-        <p class="note">Fyll i en verklig leasingofferta (t.ex. från en återförsäljare eller en jämförelsesajt). Vid leasing äger du aldrig bilen - restvärde och haveririsk bärs av leasingbolaget och visas därför inte i uppdelningen nedan.</p>
+        <p class="note">Fyll i en verklig leasingofferta (t.ex. från en återförsäljare eller en jämförelsesajt). Vid leasing äger du aldrig bilen - restvärde och haveririsk bärs av leasingbolaget och visas därför inte i uppdelningen nedan. Fordonsskatt ingår normalt INTE i leasingavgiften och visas därför alltid separat.</p>
       </fieldset>
 
       <h2>Löpande kostnader</h2>
@@ -148,13 +149,21 @@
           <input type="number" id="serviceMonthly" value="400" min="0" step="50">
         </div>
         <div>
-          <label for="taxAnnual">Fordonsskatt (kr/år)</label>
-          <input type="number" id="taxAnnual" value="2000" min="0" step="100">
+          <label for="taxMalusAnnual">Fordonsskatt, år 1-3 (kr/år)</label>
+          <input type="number" id="taxMalusAnnual" value="6000" min="0" step="100">
+        </div>
+        <div>
+          <label for="taxNormalAnnual">Fordonsskatt, därefter (kr/år)</label>
+          <input type="number" id="taxNormalAnnual" value="2000" min="0" step="100">
         </div>
       </div>
       <p class="note">Försäkringen växlar automatiskt mellan halv- och helförsäkring utifrån bilens
         kalenderålder (se gränser under Avancerat) - vanligtvis halv de första åren (täcks delvis av
-        nybilsgaranti/vagnskadegaranti), hel däremellan, och halv igen när bilen blivit lågvärderad.</p>
+        nybilsgaranti/vagnskadegaranti), hel däremellan, och halv igen när bilen blivit lågvärderad.
+        Fordonsskatten följer bonus-malus: högre skatt de första åren sedan tillverkning, sedan en
+        lägre normalnivå (gränsår under Avancerat). Standardvärden för skatt och haveririsk fylls i
+        automatiskt utifrån valt drivmedel (elbilar har platt låg skatt och antas ha billigare men mer
+        oförutsägbara reparationer p.g.a. sällsynta men dyra batteribyten) - justera fritt.</p>
 
       <details>
         <summary>Avancerat: haveririsk &amp; värdeminskning</summary>
@@ -191,6 +200,10 @@
             <input type="number" id="insuranceHelEnd" value="8" min="0" max="25" step="0.5">
           </div>
           <div>
+            <label for="taxMalusYears">Malusperiod, fordonsskatt (år)</label>
+            <input type="number" id="taxMalusYears" value="3" min="0" max="10" step="1">
+          </div>
+          <div>
             <label for="tireSetCost">Kostnad per däckuppsättning (kr)</label>
             <input type="number" id="tireSetCost" value="6000" min="0" step="500">
           </div>
@@ -202,11 +215,23 @@
             <label for="summerTireInterval">År mellan sommardäcksbyten</label>
             <input type="number" id="summerTireInterval" value="5" min="1" max="15" step="1">
           </div>
+          <div>
+            <label for="baselineAnnualMileage">Antagen körsträcka före köpet (km/år)</label>
+            <input type="number" id="baselineAnnualMileage" value="15000" min="1000" step="500">
+          </div>
+          <div>
+            <label for="mileageWeight">Körsträckans vikt i åldrandet (%)</label>
+            <input type="number" id="mileageWeight" value="70" min="0" max="100" step="5">
+          </div>
         </div>
         <p class="note">Haveririsken beräknas med en Monte Carlo-simulering (ökande haverisannolikhet med
-          bilens kalenderålder sedan tillverkning - en begagnad bil börjar alltså redan högre upp på
-          riskkurvan). Modellen antar att ett ekonomiskt totalhaveri innebär att en likvärdig bil (samma
-          kalenderålder som vid det ursprungliga köpet) köps in igen, vilket återställer både värde och
+          bilens "ekvivalenta ålder" sedan tillverkning - en blandning av kalenderålder och körsträcka
+          enligt vikten ovan - så en begagnad och/eller högkörd bil börjar alltså redan högre upp på
+          både risk- och värdeminskningskurvan. Samma ekvivalenta ålder används för värdeminskningen,
+          så en lågkörd bil tappar värde långsammare och en högkörd bil snabbare än kalendertiden allena.
+          Körsträckan innan köpet antas vara den angivna baslinjen (eftersom den är okänd). Modellen
+          antar att ett ekonomiskt totalhaveri innebär att en likvärdig bil (samma kalenderålder och
+          körmönster som vid det ursprungliga köpet) köps in igen, vilket återställer både värde och
           riskklocka till utgångsläget för resten av innehavsperioden. Däckkostnaden gäller inte vinterdäck
           om "Vinterdäck ingår i avgiften" är ikryssat för leasing.</p>
       </details>

@@ -37,7 +37,7 @@ test("simulateOnePath never triggers an event when rng always returns ~1 (never 
     repairCostSigma: 0.8,
     totalLossThreshold: 0.5,
     reliabilityFactor: 1.0,
-  }, 0, rng);
+  }, 0, 1, rng);
   assert.equal(result.numEvents, 0);
   assert.equal(result.numTotalLosses, 0);
   assert.ok(result.cashflow.every((v) => v === 0));
@@ -52,7 +52,7 @@ test("simulateOnePath records a total loss when repair cost always exceeds the v
     repairCostSigma: 0.1,
     totalLossThreshold: 0.5,
     reliabilityFactor: 1.0,
-  }, 0, rng);
+  }, 0, 1, rng);
   assert.ok(result.numEvents > 0);
   assert.ok(result.numTotalLosses > 0);
   assert.equal(result.resetMonths.length, result.numTotalLosses);
@@ -70,4 +70,26 @@ test("simulateOnePath with a used car starts hazard at a higher calendar age imm
   const hazardNew = weibullHazard(1, riskParams.weibullShape, riskParams.weibullScaleMonths);
   const hazardUsed = weibullHazard(121, riskParams.weibullShape, riskParams.weibullScaleMonths);
   assert.ok(hazardUsed > hazardNew, "a 10-year-old car should have a materially higher hazard at month 1 of ownership than a brand new car");
+});
+
+test("simulateOnePath with a higher ageRateMultiplier (more mileage) produces more events than baseline", () => {
+  const riskParams = {
+    weibullShape: 2.5,
+    weibullScaleMonths: 180,
+    repairCostMedian: 1, // Trivial repair cost so events never trigger a total loss/reset
+    repairCostSigma: 0.1,
+    totalLossThreshold: 0.999,
+    reliabilityFactor: 1.0,
+  };
+  // Use a fixed rng sequence so both runs see identical "dice rolls" for the hazard check;
+  // only the hazard magnitude (driven by ageRateMultiplier) should differ.
+  const fixedRolls = Array.from({ length: 400 }, (_, i) => ((i * 37) % 100) / 100);
+  let callCount = 0;
+  const makeRng = () => {
+    callCount = 0;
+    return () => fixedRolls[callCount++ % fixedRolls.length];
+  };
+  const baseline = simulateOnePath(300000, 120, [0.2, 0.15, 0.12, 0.1], riskParams, 0, 1, makeRng());
+  const highMileage = simulateOnePath(300000, 120, [0.2, 0.15, 0.12, 0.1], riskParams, 0, 2.5, makeRng());
+  assert.ok(highMileage.numEvents >= baseline.numEvents, "a car aging 2.5x faster due to mileage should not have fewer hazard events");
 });

@@ -52,19 +52,19 @@ test("computeTco with leasing excludes residual value and haveririsk entirely", 
   assert.ok(!("residual" in result.categoryMonthly));
 });
 
-test("computeTco with leasing zeroes tax/service when bundled in the fee", () => {
+test("computeTco with leasing never bundles tax, but zeroes service when bundled in the fee", () => {
   const assumptions = cloneAssumptions();
   assumptions.risk.enabled = false;
-  assumptions.financing.leasing.taxAndServiceIncluded = true;
+  assumptions.financing.leasing.serviceIncluded = true;
   const result = computeTco({ price: 300000, months: 36, financingMethod: "leasing", assumptions });
-  assert.equal(Math.abs(result.categoryMonthly.tax), 0);
+  assert.ok(result.categoryMonthly.tax > 0, "tax should always be a separate cost under leasing");
   assert.equal(Math.abs(result.categoryMonthly.service), 0);
 });
 
-test("computeTco with leasing keeps tax/service as separate costs when not bundled", () => {
+test("computeTco with leasing keeps service as a separate cost when not bundled", () => {
   const assumptions = cloneAssumptions();
   assumptions.risk.enabled = false;
-  assumptions.financing.leasing.taxAndServiceIncluded = false;
+  assumptions.financing.leasing.serviceIncluded = false;
   const result = computeTco({ price: 300000, months: 36, financingMethod: "leasing", assumptions });
   assert.ok(result.categoryMonthly.tax > 0);
   assert.ok(result.categoryMonthly.service > 0);
@@ -127,4 +127,73 @@ test("computeTco with a higher ageAtPurchaseYears retains a larger share of valu
   // purchase price over the next 24 months than a brand new car does, so its residual
   // deduction should be larger in magnitude.
   assert.ok(Math.abs(resultUsed.categoryMonthly.residual) > Math.abs(resultNew.categoryMonthly.residual));
+});
+
+test("computeTco applies the malus tax rate for the first malusYears, then the lower normal rate", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = false;
+  assumptions.tax.malusAnnualAmount = 12000;
+  assumptions.tax.normalAnnualAmount = 2400;
+  assumptions.tax.malusYears = 1;
+  // Entirely within the malus period (< 1 year held, bought new)
+  const duringMalus = computeTco({ price: 300000, months: 6, financingMethod: "kontant", assumptions });
+  // Bought already past the malus period
+  const afterMalus = cloneAssumptions();
+  afterMalus.risk.enabled = false;
+  afterMalus.tax.malusAnnualAmount = 12000;
+  afterMalus.tax.normalAnnualAmount = 2400;
+  afterMalus.tax.malusYears = 1;
+  afterMalus.ageAtPurchaseYears = 2;
+  const afterMalusResult = computeTco({ price: 300000, months: 6, financingMethod: "kontant", assumptions: afterMalus });
+  assert.ok(Math.abs(duringMalus.categoryMonthly.tax) > Math.abs(afterMalusResult.categoryMonthly.tax));
+});
+
+test("computeTco: higher annual mileage than baseline depreciates the car faster (smaller residual deduction)", () => {
+  const lowMileage = cloneAssumptions();
+  lowMileage.risk.enabled = false;
+  lowMileage.annualMileageKm = 5000;
+  const resultLow = computeTco({ price: 300000, months: 24, financingMethod: "kontant", assumptions: lowMileage });
+
+  const highMileage = cloneAssumptions();
+  highMileage.risk.enabled = false;
+  highMileage.annualMileageKm = 30000;
+  const resultHigh = computeTco({ price: 300000, months: 24, financingMethod: "kontant", assumptions: highMileage });
+
+  // A high-mileage car ages faster and retains less value, so the money you get back at the
+  // end (the residual credit) is smaller in magnitude than for a low-mileage car.
+  assert.ok(Math.abs(resultHigh.categoryMonthly.residual) < Math.abs(resultLow.categoryMonthly.residual));
+});
+
+test("computeTco: with mileageWeight=0, annual mileage has no effect on depreciation (pure calendar aging)", () => {
+  const lowMileage = cloneAssumptions();
+  lowMileage.risk.enabled = false;
+  lowMileage.vehicleAge.mileageWeight = 0;
+  lowMileage.annualMileageKm = 5000;
+  const resultLow = computeTco({ price: 300000, months: 24, financingMethod: "kontant", assumptions: lowMileage });
+
+  const highMileage = cloneAssumptions();
+  highMileage.risk.enabled = false;
+  highMileage.vehicleAge.mileageWeight = 0;
+  highMileage.annualMileageKm = 30000;
+  const resultHigh = computeTco({ price: 300000, months: 24, financingMethod: "kontant", assumptions: highMileage });
+
+  assert.ok(Math.abs(resultHigh.categoryMonthly.residual - resultLow.categoryMonthly.residual) < 1e-6);
+});
+
+test("computeTco: higher annual mileage than baseline increases the risk of a total loss over the holding period", () => {
+  const lowMileage = cloneAssumptions();
+  lowMileage.risk.enabled = true;
+  lowMileage.risk.numSimulations = 800;
+  lowMileage.annualMileageKm = 3000;
+  const resultLow = computeTco({ price: 150000, months: 120, financingMethod: "kontant", assumptions: lowMileage });
+
+  const highMileage = cloneAssumptions();
+  highMileage.risk.enabled = true;
+  highMileage.risk.numSimulations = 800;
+  highMileage.annualMileageKm = 40000;
+  const resultHigh = computeTco({ price: 150000, months: 120, financingMethod: "kontant", assumptions: highMileage });
+
+  // Driving more than baseline ages the car faster (higher equivalent hazard age), so a total
+  // loss (haveri) is more likely to occur at some point during the holding period.
+  assert.ok(resultHigh.risk.shareWithTotalLoss > resultLow.risk.shareWithTotalLoss);
 });
