@@ -87,7 +87,7 @@ export const defaultAssumptions = {
     enabled: true,
     numSimulations: 3000,
     weibullShape: 2.5, // k - ökande haveriintensitet med ålder
-    weibullScaleMonths: 180, // lambda - karaktäristisk livslängd (15 år)
+    weibullScaleMonths: 204, // lambda - karaktäristisk livslängd (17 år)
     repairCostMedian: 25000, // SEK, log-normalfördelning
     repairCostSigma: 0.8, // log-normal spridningsparameter
     totalLossThreshold: 0.5, // Totalhaveri om reparationskostnad > 50% av bilens aktuella värde
@@ -106,14 +106,14 @@ export const defaultAssumptions = {
 export const fuelTypeDefaults = {
   bensin: {
     tax: { malusAnnualAmount: 6000, normalAnnualAmount: 2000, malusYears: 3 },
-    risk: { weibullScaleMonths: 180, repairCostMedian: 25000, repairCostSigma: 0.8, reliabilityFactor: 1.0 },
+    risk: { weibullScaleMonths: 204, repairCostMedian: 25000, repairCostSigma: 0.8, reliabilityFactor: 1.0 },
   },
   diesel: {
     tax: { malusAnnualAmount: 9000, normalAnnualAmount: 3600, malusYears: 3 },
-    risk: { weibullScaleMonths: 180, repairCostMedian: 27000, repairCostSigma: 0.8, reliabilityFactor: 1.0 },
+    risk: { weibullScaleMonths: 204, repairCostMedian: 27000, repairCostSigma: 0.8, reliabilityFactor: 1.0 },
   },
   el: {
     tax: { malusAnnualAmount: 360, normalAnnualAmount: 360, malusYears: 3 }, // Ingen malus för elbilar
-    risk: { weibullScaleMonths: 200, repairCostMedian: 15000, repairCostSigma: 1.1, reliabilityFactor: 0.85 },
+    risk: { weibullScaleMonths: 224, repairCostMedian: 15000, repairCostSigma: 1.1, reliabilityFactor: 0.85 },
   },
 };
