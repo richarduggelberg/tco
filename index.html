@@ -18,20 +18,38 @@
       <div class="grid">
         <div>
           <label for="price">Inköpspris (kr)</label>
-          <input type="number" id="price" value="300000" min="1000" step="1000" required>
+          <input type="number" id="price" value="300000" min="1000" step="any" list="price-options" required>
+          <datalist id="price-options">
+            <option value="10000">
+            <option value="20000">
+            <option value="30000">
+            <option value="40000">
+            <option value="50000">
+            <option value="70000">
+            <option value="100000">
+            <option value="150000">
+            <option value="200000">
+            <option value="250000">
+            <option value="300000">
+            <option value="350000">
+            <option value="400000">
+            <option value="500000">
+            <option value="700000">
+            <option value="1000000">
+          </datalist>
         </div>
         <div>
           <label for="ageAtPurchase">Ålder vid köp (år)</label>
-          <input type="number" id="ageAtPurchase" value="0" min="0" max="30" step="0.5">
+          <input type="number" id="ageAtPurchase" value="0" min="0" max="30" step="any">
           <p class="note hidden" id="implied-newprice-note"></p>
         </div>
         <div>
           <label for="holdingYears">Innehavstid (år)</label>
-          <input type="number" id="holdingYears" value="5" min="1" max="20" step="1" required>
+          <input type="number" id="holdingYears" value="5" min="1" max="20" step="any" required>
         </div>
         <div>
           <label for="annualMileage">Körsträcka per år (km)</label>
-          <input type="number" id="annualMileage" value="15000" min="0" step="500" required>
+          <input type="number" id="annualMileage" value="15000" min="0" step="any" required>
         </div>
         <div>
           <label for="fuelType">Drivmedel</label>
@@ -65,7 +83,7 @@
         </div>
         <div>
           <label for="discountRate">Alternativkostnad för kapital (%/år)</label>
-          <input type="number" id="discountRate" value="5" min="0" max="20" step="0.1">
+          <input type="number" id="discountRate" value="5" min="0" max="20" step="any">
         </div>
       </div>
 
@@ -74,15 +92,15 @@
         <div class="grid">
           <div>
             <label for="billanDownPayment">Kontantinsats (%)</label>
-            <input type="number" id="billanDownPayment" value="20" min="0" max="100" step="1">
+            <input type="number" id="billanDownPayment" value="20" min="0" max="100" step="any">
           </div>
           <div>
             <label for="billanRate">Ränta (%/år)</label>
-            <input type="number" id="billanRate" value="7" min="0" max="25" step="0.1">
+            <input type="number" id="billanRate" value="7" min="0" max="25" step="any">
           </div>
           <div>
             <label for="billanTerm">Löptid (år)</label>
-            <input type="number" id="billanTerm" value="5" min="1" max="15" step="1">
+            <input type="number" id="billanTerm" value="5" min="1" max="15" step="any">
           </div>
         </div>
       </fieldset>
@@ -92,15 +110,15 @@
         <div class="grid">
           <div>
             <label for="bolanDownPayment">Kontantinsats (%)</label>
-            <input type="number" id="bolanDownPayment" value="0" min="0" max="100" step="1">
+            <input type="number" id="bolanDownPayment" value="0" min="0" max="100" step="any">
           </div>
           <div>
             <label for="bolanRate">Ränta (%/år)</label>
-            <input type="number" id="bolanRate" value="3.5" min="0" max="15" step="0.1">
+            <input type="number" id="bolanRate" value="3.5" min="0" max="15" step="any">
           </div>
           <div>
             <label for="bolanAmortization">Amortering (%/år)</label>
-            <input type="number" id="bolanAmortization" value="1" min="0" max="10" step="0.1">
+            <input type="number" id="bolanAmortization" value="1" min="0" max="10" step="any">
           </div>
         </div>
       </fieldset>
@@ -110,11 +128,11 @@
         <div class="grid">
           <div>
             <label for="leasingFee">Leasingavgift (kr/mån)</label>
-            <input type="number" id="leasingFee" value="4500" min="0" step="100">
+            <input type="number" id="leasingFee" value="4500" min="0" step="any">
           </div>
           <div>
             <label for="leasingFirstPayment">Förhöjd första avgift (kr)</label>
-            <input type="number" id="leasingFirstPayment" value="0" min="0" step="1000">
+            <input type="number" id="leasingFirstPayment" value="0" min="0" step="any">
           </div>
           <div>
             <label for="leasingServiceIncluded">Service ingår i avgiften</label>
@@ -138,23 +156,23 @@
       <div class="grid">
         <div>
           <label for="insuranceHalv">Halvförsäkring (kr/mån)</label>
-          <input type="number" id="insuranceHalv" value="400" min="0" step="50">
+          <input type="number" id="insuranceHalv" value="400" min="0" step="any">
         </div>
         <div>
           <label for="insuranceHel">Helförsäkring (kr/mån)</label>
-          <input type="number" id="insuranceHel" value="650" min="0" step="50">
+          <input type="number" id="insuranceHel" value="650" min="0" step="any">
         </div>
         <div>
           <label for="serviceMonthly">Service, besiktning (kr/mån)</label>
-          <input type="number" id="serviceMonthly" value="400" min="0" step="50">
+          <input type="number" id="serviceMonthly" value="400" min="0" step="any">
         </div>
         <div>
           <label for="taxMalusAnnual">Fordonsskatt, år 1-3 (kr/år)</label>
-          <input type="number" id="taxMalusAnnual" value="6000" min="0" step="100">
+          <input type="number" id="taxMalusAnnual" value="6000" min="0" step="any">
         </div>
         <div>
           <label for="taxNormalAnnual">Fordonsskatt, därefter (kr/år)</label>
-          <input type="number" id="taxNormalAnnual" value="2000" min="0" step="100">
+          <input type="number" id="taxNormalAnnual" value="2000" min="0" step="any">
         </div>
       </div>
       <p class="note">Försäkringen växlar automatiskt mellan halv- och helförsäkring utifrån bilens
@@ -177,51 +195,51 @@
           </div>
           <div>
             <label for="expectedLifeYears">Förväntad livslängd (år)</label>
-            <input type="number" id="expectedLifeYears" value="15" min="1" max="40" step="1">
+            <input type="number" id="expectedLifeYears" value="15" min="1" max="40" step="any">
           </div>
           <div>
             <label for="repairCostMedian">Typisk allvarlig reparationskostnad (kr)</label>
-            <input type="number" id="repairCostMedian" value="25000" min="0" step="1000">
+            <input type="number" id="repairCostMedian" value="25000" min="0" step="any">
           </div>
           <div>
             <label for="totalLossThreshold">Totalhaveri-tröskel (% av bilvärde)</label>
-            <input type="number" id="totalLossThreshold" value="50" min="10" max="100" step="5">
+            <input type="number" id="totalLossThreshold" value="50" min="10" max="100" step="any">
           </div>
           <div>
             <label for="reliabilityFactor">Tillförlitlighetsfaktor (1 = snitt)</label>
-            <input type="number" id="reliabilityFactor" value="1.0" min="0.3" max="3" step="0.1">
+            <input type="number" id="reliabilityFactor" value="1.0" min="0.3" max="3" step="any">
           </div>
           <div>
             <label for="insuranceHelStart">Helförsäkring från ålder (år)</label>
-            <input type="number" id="insuranceHelStart" value="3" min="0" max="20" step="0.5">
+            <input type="number" id="insuranceHelStart" value="3" min="0" max="20" step="any">
           </div>
           <div>
             <label for="insuranceHelEnd">Tillbaka till halvförsäkring från ålder (år)</label>
-            <input type="number" id="insuranceHelEnd" value="8" min="0" max="25" step="0.5">
+            <input type="number" id="insuranceHelEnd" value="8" min="0" max="25" step="any">
           </div>
           <div>
             <label for="taxMalusYears">Malusperiod, fordonsskatt (år)</label>
-            <input type="number" id="taxMalusYears" value="3" min="0" max="10" step="1">
+            <input type="number" id="taxMalusYears" value="3" min="0" max="10" step="any">
           </div>
           <div>
             <label for="tireSetCost">Kostnad per däckuppsättning (kr)</label>
-            <input type="number" id="tireSetCost" value="6000" min="0" step="500">
+            <input type="number" id="tireSetCost" value="6000" min="0" step="any">
           </div>
           <div>
             <label for="winterTireInterval">År mellan vinterdäcksbyten</label>
-            <input type="number" id="winterTireInterval" value="4" min="1" max="15" step="1">
+            <input type="number" id="winterTireInterval" value="4" min="1" max="15" step="any">
           </div>
           <div>
             <label for="summerTireInterval">År mellan sommardäcksbyten</label>
-            <input type="number" id="summerTireInterval" value="5" min="1" max="15" step="1">
+            <input type="number" id="summerTireInterval" value="5" min="1" max="15" step="any">
           </div>
           <div>
             <label for="baselineAnnualMileage">Antagen körsträcka före köpet (km/år)</label>
-            <input type="number" id="baselineAnnualMileage" value="15000" min="1000" step="500">
+            <input type="number" id="baselineAnnualMileage" value="15000" min="1000" step="any">
           </div>
           <div>
             <label for="mileageWeight">Körsträckans vikt i åldrandet (%)</label>
-            <input type="number" id="mileageWeight" value="70" min="0" max="100" step="5">
+            <input type="number" id="mileageWeight" value="70" min="0" max="100" step="any">
           </div>
         </div>
         <p class="note">Haveririsken beräknas med en Monte Carlo-simulering (ökande haverisannolikhet med
