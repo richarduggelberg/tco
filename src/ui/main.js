@@ -242,9 +242,24 @@ function renderResults(result, financingMethod) {
   });
 }
 
+// Färgskala (ljusare = mindre sannolikt) för överlevnadsmarkörerna, nyckel = sannolikhet.
+const survivalMarkerColors = {
+  0.5: "#1d4ed8",
+  0.25: "#2563eb",
+  0.1: "#3b82f6",
+  0.05: "#60a5fa",
+  0.01: "#93c5fd",
+};
+
 function renderLifetimeChart(input) {
   const lifetime = computeLifetimeMonthlyCosts(input);
   const points = lifetime.ageYears.map((y, i) => ({ x: y, y: Math.round(lifetime.monthlyCost[i]) }));
+
+  const survivalMarkers = lifetime.survivalMilestones.map((m) => ({
+    value: m.ageYears,
+    color: survivalMarkerColors[m.probability] ?? "#60a5fa",
+    label: `${Math.round(m.probability * 100)}%`,
+  }));
 
   if (lifetimeChartInstance) lifetimeChartInstance.destroy();
   lifetimeChartInstance = new Chart(lifetimeChartCanvas, {
@@ -269,6 +284,7 @@ function renderLifetimeChart(input) {
           markers: [
             { value: lifetime.purchaseAgeYears, color: "#b33", label: "Köp" },
             { value: lifetime.endOfOwnershipAgeYears, color: "#555", label: "Säljs" },
+            ...survivalMarkers,
           ],
         },
       },

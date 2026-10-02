@@ -1,6 +1,6 @@
 import { financingCashflow, loanSeries } from "./financing.js";
 import { buildValueSeries } from "./depreciation.js";
-import { simulateRiskPaths } from "./risk.js";
+import { simulateRiskPaths, weibullHazard } from "./risk.js";
 import { presentValue, levelMonthlyPayment, annualToMonthlyRate } from "./npv.js";
 import {
   buildConstantSeries,
@@ -23,6 +23,25 @@ function percentile(sortedArr, p) {
   const frac = idx - lo;
   return sortedArr[lo] * (1 - frac) + sortedArr[hi] * frac;
 }
+
+/** Felfunktionen (erf), Abramowitz & Stegun 7.1.26-approximation (|fel| < 1.5e-7). */
+function erf(x) {
+  const sign = x < 0 ? -1 : 1;
+  const absX = Math.abs(x);
+  const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741, a4 = -1.453152027, a5 = 1.061405429, p = 0.3275911;
+  const t = 1 / (1 + p * absX);
+  const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-absX * absX);
+  return sign * y;
+}
+
+/** Kumulativ fördelningsfunktion för standardnormalfördelningen. */
+function standardNormalCdf(z) {
+  return 0.5 * (1 + erf(z / Math.SQRT2));
+}
+
+/** Sannolikheter (fallande) som ska markeras på livscykeldiagrammets överlevnadskurva. */
+const SURVIVAL_MILESTONES = [0.5, 0.25, 0.1, 0.05, 0.01];
+
 
 /**
  * Försäkringskostnad för en given månad, baserat på bilens kalenderålder (sedan
@@ -177,6 +196,68 @@ function smoothMonthlySurvivalFactor(ageYearsAtMidpoint, yearlyRates) {
 }
 
 /**
+ * Bygger bilens värde månad för månad sedan tillverkning (ankrat i det kända priset vid
+ * ageAtPurchaseMonths), för en given total livslängd i månader.
+ */
+function buildLifeValue(totalLifeMonths, ageAtPurchaseMonths, price, yearlyRates, ageRateMultiplier) {
+  const lifeValue = new Array(totalLifeMonths + 1);
+  lifeValue[ageAtPurchaseMonths] = price;
+  let forwardValue = price;
+  for (let u = ageAtPurchaseMonths + 1; u <= totalLifeMonths; u++) {
+    const effectiveAgePrev = ageAtPurchaseMonths + (u - 1 - ageAtPurchaseMonths) * ageRateMultiplier;
+    const effectiveAgeCur = ageAtPurchaseMonths + (u - ageAtPurchaseMonths) * ageRateMultiplier;
+    forwardValue *= smoothMonthlySurvivalFactor((effectiveAgePrev + effectiveAgeCur) / 2 / 12, yearlyRates);
+    lifeValue[u] = forwardValue;
+  }
+  let backwardValue = price;
+  for (let u = ageAtPurchaseMonths - 1; u >= 0; u--) {
+    backwardValue /= smoothMonthlySurvivalFactor((u + u + 1) / 2 / 12, yearlyRates);
+    lifeValue[u] = backwardValue;
+  }
+  return lifeValue;
+}
+
+/** Bilens "ekvivalenta" (körsträcke-viktade) ålder vid kalenderålder u sedan tillverkning. */
+function equivalentAgeMonthsAt(u, ageAtPurchaseMonths, ageRateMultiplier) {
+  if (u <= ageAtPurchaseMonths) return u;
+  return ageAtPurchaseMonths + (u - ageAtPurchaseMonths) * ageRateMultiplier;
+}
+
+/**
+ * Sannolikheten att bilen ÄNNU INTE haft ett ekonomiskt totalhaveri vid given kalenderålder
+ * (dvs. "överlever" som fungerande bil), månad för månad: varje månads hazard (Weibull,
+ * samma modell som i risk.js) kombineras med sannolikheten att en sådan reparationshändelse
+ * faktiskt blir ett totalhaveri (reparationskostnad > tröskel * bilens då aktuella värde,
+ * där reparationskostnaden antas log-normalfördelad kring repairCostMedian).
+ */
+function buildSurvivalProbability(totalLifeMonths, lifeValue, ageAtPurchaseMonths, ageRateMultiplier, risk) {
+  const survival = new Array(totalLifeMonths + 1);
+  survival[0] = 1;
+  for (let t = 1; t <= totalLifeMonths; t++) {
+    const equivalentAge = equivalentAgeMonthsAt(t, ageAtPurchaseMonths, ageRateMultiplier);
+    const hazard = Math.min(Math.max(weibullHazard(equivalentAge, risk.weibullShape, risk.weibullScaleMonths) * risk.reliabilityFactor, 0), 1);
+    const thresholdValue = risk.totalLossThreshold * Math.max(lifeValue[t], 1);
+    const z = Math.log(thresholdValue / risk.repairCostMedian) / risk.repairCostSigma;
+    const probRepairExceedsThreshold = 1 - standardNormalCdf(z);
+    const totalLossProb = Math.min(Math.max(hazard * probRepairExceedsThreshold, 0), 1);
+    survival[t] = survival[t - 1] * (1 - totalLossProb);
+  }
+  return survival;
+}
+
+/** Finner (via linjär interpolation) åldern i år där överlevnadskurvan först korsar en given sannolikhet. */
+function findSurvivalAgeYears(survival, targetProbability) {
+  for (let t = 1; t < survival.length; t++) {
+    if (survival[t] <= targetProbability) {
+      const prev = survival[t - 1];
+      const frac = prev === survival[t] ? 0 : (prev - targetProbability) / (prev - survival[t]);
+      return (t - 1 + frac) / 12;
+    }
+  }
+  return null; // Nås inte inom den beräknade livslängden
+}
+
+/**
  * Bygger en nominell (ej nuvärdesberäknad) månadskostnadskurva över bilens HELA liv
  * (sedan tillverkning), för att visualisera hur kostnaden varierar med bilens ålder -
  * oavsett vem som äger den. Drift-/åldersrelaterade poster (skatt, försäkring, bränsle/el,
@@ -196,28 +277,23 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
   const monthlyDiscountRate = annualToMonthlyRate(assumptions.discountRateAnnual);
 
   // Visa hela bilens liv (en rimlig totallivslängd), men förläng vid behov så att
-  // ägandeperioden plus lite marginal efter försäljning alltid ryms.
+  // ägandeperioden plus lite marginal efter försäljning alltid ryms, OCH så att
+  // överlevnadskurvan (se nedan) hinner nå ner till den lägsta markerade sannolikheten.
   const fullLifeMonths = 18 * 12;
-  const totalLifeMonths = Math.max(fullLifeMonths, ageAtPurchaseMonths + months + 24);
-
-  // Bilens värde sedan tillverkning, byggt månad för månad och ankrat exakt i det kända
-  // inköpspriset vid köpmånaden. Årstakten (yearlyRates) interpoleras linjärt mellan
-  // intilliggande år istället för att växla abrupt vid varje årsskifte, så att kurvan
-  // (och därmed värdeminskningen per månad) blir mjuk istället för att göra ett hopp var 12:e månad.
-  const lifeValue = new Array(totalLifeMonths + 1);
-  lifeValue[ageAtPurchaseMonths] = price;
-  let forwardValue = price;
-  for (let u = ageAtPurchaseMonths + 1; u <= totalLifeMonths; u++) {
-    const effectiveAgePrev = ageAtPurchaseMonths + (u - 1 - ageAtPurchaseMonths) * ageRateMultiplier;
-    const effectiveAgeCur = ageAtPurchaseMonths + (u - ageAtPurchaseMonths) * ageRateMultiplier;
-    forwardValue *= smoothMonthlySurvivalFactor((effectiveAgePrev + effectiveAgeCur) / 2 / 12, yearlyRates);
-    lifeValue[u] = forwardValue;
+  const maxLifeMonths = 60 * 12; // Skydd mot oändlig förlängning vid orimliga riskparametrar
+  const lowestSurvivalMilestone = SURVIVAL_MILESTONES[SURVIVAL_MILESTONES.length - 1];
+  let totalLifeMonths = Math.max(fullLifeMonths, ageAtPurchaseMonths + months + 24);
+  let lifeValue = buildLifeValue(totalLifeMonths, ageAtPurchaseMonths, price, yearlyRates, ageRateMultiplier);
+  let survival = buildSurvivalProbability(totalLifeMonths, lifeValue, ageAtPurchaseMonths, ageRateMultiplier, assumptions.risk);
+  while (survival[totalLifeMonths] > lowestSurvivalMilestone && totalLifeMonths < maxLifeMonths) {
+    totalLifeMonths += 5 * 12;
+    lifeValue = buildLifeValue(totalLifeMonths, ageAtPurchaseMonths, price, yearlyRates, ageRateMultiplier);
+    survival = buildSurvivalProbability(totalLifeMonths, lifeValue, ageAtPurchaseMonths, ageRateMultiplier, assumptions.risk);
   }
-  let backwardValue = price;
-  for (let u = ageAtPurchaseMonths - 1; u >= 0; u--) {
-    backwardValue /= smoothMonthlySurvivalFactor((u + u + 1) / 2 / 12, yearlyRates);
-    lifeValue[u] = backwardValue;
-  }
+  const survivalMilestones = SURVIVAL_MILESTONES.map((probability) => ({
+    probability,
+    ageYears: findSurvivalAgeYears(survival, probability),
+  })).filter((m) => m.ageYears !== null);
 
   const energyMonthly = computeEnergyMonthly(assumptions.annualMileageKm, assumptions.running);
   const winterIntervalMonths = Math.round(assumptions.tires.winterIntervalYears * 12);
@@ -259,5 +335,6 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
     monthlyCost,
     purchaseAgeYears: ageAtPurchaseMonths / 12,
     endOfOwnershipAgeYears: (ageAtPurchaseMonths + months) / 12,
+    survivalMilestones,
   };
 }

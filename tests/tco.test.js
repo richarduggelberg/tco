@@ -243,3 +243,15 @@ test("computeLifetimeMonthlyCosts shows a higher monthly cost during ownership t
   const firstUnownedIdx = lastOwnedIdx + 1;
   assert.ok(result.monthlyCost[lastOwnedIdx] > result.monthlyCost[firstUnownedIdx]);
 });
+
+test("computeLifetimeMonthlyCosts returns survival milestones (50/25/10/5/1%) in increasing age order, and the chart data reaches at least the 1% age", () => {
+  const assumptions = cloneAssumptions();
+  const result = computeLifetimeMonthlyCosts({ price: 300000, months: 60, financingMethod: "kontant", assumptions });
+  const probabilities = result.survivalMilestones.map((m) => m.probability);
+  assert.deepEqual(probabilities, [0.5, 0.25, 0.1, 0.05, 0.01]);
+  for (let i = 1; i < result.survivalMilestones.length; i++) {
+    assert.ok(result.survivalMilestones[i].ageYears > result.survivalMilestones[i - 1].ageYears, "later (lower-probability) milestones should occur at a higher age");
+  }
+  const onePercentMilestone = result.survivalMilestones.find((m) => m.probability === 0.01);
+  assert.ok(result.ageYears[result.ageYears.length - 1] >= onePercentMilestone.ageYears, "the chart's age range should extend at least to the 1% survival age");
+});
