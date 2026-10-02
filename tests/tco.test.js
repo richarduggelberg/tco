@@ -255,3 +255,15 @@ test("computeLifetimeMonthlyCosts returns survival milestones (50/25/10/5/1%) in
   const onePercentMilestone = result.survivalMilestones.find((m) => m.probability === 0.01);
   assert.ok(result.ageYears[result.ageYears.length - 1] >= onePercentMilestone.ageYears, "the chart's age range should extend at least to the 1% survival age");
 });
+
+test("computeLifetimeMonthlyCosts: expected risk cost grows with age and eventually makes the total cost curve turn upward again (regression: risk cost was previously missing from this curve entirely)", () => {
+  const assumptions = cloneAssumptions();
+  const result = computeLifetimeMonthlyCosts({ price: 300000, months: 60, financingMethod: "kontant", assumptions });
+  assert.ok(result.riskMonthly.every((v) => Number.isFinite(v) && v >= 0));
+  const idx10 = Math.round(10 * 12) - 1;
+  const idx30 = Math.round(30 * 12) - 1;
+  assert.ok(result.riskMonthly[idx30] > result.riskMonthly[idx10], "expected risk cost should grow with age");
+  const minTotal = Math.min(...result.monthlyCost);
+  const lastTotal = result.monthlyCost[result.monthlyCost.length - 1];
+  assert.ok(lastTotal > minTotal, "near the end of the computed life, rising risk cost should push the total back up above its minimum");
+});

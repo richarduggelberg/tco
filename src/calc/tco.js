@@ -224,25 +224,33 @@ function equivalentAgeMonthsAt(u, ageAtPurchaseMonths, ageRateMultiplier) {
 }
 
 /**
- * Sannolikheten att bilen ÄNNU INTE haft ett ekonomiskt totalhaveri vid given kalenderålder
- * (dvs. "överlever" som fungerande bil), månad för månad: varje månads hazard (Weibull,
- * samma modell som i risk.js) kombineras med sannolikheten att en sådan reparationshändelse
- * faktiskt blir ett totalhaveri (reparationskostnad > tröskel * bilens då aktuella värde,
- * där reparationskostnaden antas log-normalfördelad kring repairCostMedian).
+ * Bygger två kurvor månad för månad, sedan tillverkning: dels sannolikheten att bilen ÄNNU
+ * INTE haft ett ekonomiskt totalhaveri ("överlever" som fungerande bil), dels den förväntade
+ * riskkostnaden den månaden. Båda bygger på samma hazard (Weibull, samma modell som i risk.js)
+ * och samma sannolikhet att en reparationshändelse blir ett totalhaveri (reparationskostnad >
+ * tröskel * bilens då aktuella värde, där reparationskostnaden antas log-normalfördelad kring
+ * repairCostMedian). Vid ett totalhaveri ersätts bilen med en likvärdig bil till SAMMA pris som
+ * angetts för denna simulering (som i risk.js: man köper en ny bil av det slag/ålder man
+ * ursprungligen ville ha, inte en bil av bilens nuvarande - mer slitna - ålder).
  */
-function buildSurvivalProbability(totalLifeMonths, lifeValue, ageAtPurchaseMonths, ageRateMultiplier, risk) {
+function buildSurvivalAndRiskCost(totalLifeMonths, lifeValue, price, ageAtPurchaseMonths, ageRateMultiplier, risk) {
   const survival = new Array(totalLifeMonths + 1);
+  const expectedRiskMonthly = new Array(totalLifeMonths + 1).fill(0);
   survival[0] = 1;
   for (let t = 1; t <= totalLifeMonths; t++) {
     const equivalentAge = equivalentAgeMonthsAt(t, ageAtPurchaseMonths, ageRateMultiplier);
     const hazard = Math.min(Math.max(weibullHazard(equivalentAge, risk.weibullShape, risk.weibullScaleMonths) * risk.reliabilityFactor, 0), 1);
     const thresholdValue = risk.totalLossThreshold * Math.max(lifeValue[t], 1);
     const z = Math.log(thresholdValue / risk.repairCostMedian) / risk.repairCostSigma;
-    const probRepairExceedsThreshold = 1 - standardNormalCdf(z);
-    const totalLossProb = Math.min(Math.max(hazard * probRepairExceedsThreshold, 0), 1);
+    const probTotalLoss = 1 - standardNormalCdf(z);
+    // E[reparationskostnad; reparationskostnad <= tröskel] för log-normal (median M, sigma s) = M*exp(s^2/2)*Φ(z-s).
+    const expectedRepairIfNotTotalLoss = risk.repairCostMedian * Math.exp((risk.repairCostSigma * risk.repairCostSigma) / 2) * standardNormalCdf(z - risk.repairCostSigma);
+    const expectedCostGivenEvent = expectedRepairIfNotTotalLoss + probTotalLoss * price;
+    const totalLossProb = Math.min(Math.max(hazard * probTotalLoss, 0), 1);
     survival[t] = survival[t - 1] * (1 - totalLossProb);
+    expectedRiskMonthly[t] = hazard * expectedCostGivenEvent;
   }
-  return survival;
+  return { survival, expectedRiskMonthly };
 }
 
 /** Finner (via linjär interpolation) åldern i år där överlevnadskurvan först korsar en given sannolikhet. */
@@ -265,7 +273,7 @@ function findSurvivalAgeYears(survival, targetProbability) {
  * poster (kapitalkostnad/låneränta/leasingavgift) bara läggs på under den egna
  * ägandeperioden (markerad med de två brytpunkterna som returneras).
  * @param {object} input - { price, months, financingMethod, assumptions }
- * @returns {{ ageYears: number[], monthlyCost: number[], purchaseAgeYears: number, endOfOwnershipAgeYears: number }}
+ * @returns {{ ageYears: number[], monthlyCost: number[], riskMonthly: number[], purchaseAgeYears: number, endOfOwnershipAgeYears: number }}
  */
 export function computeLifetimeMonthlyCosts({ price, months, financingMethod, assumptions }) {
   const yearlyRates = assumptions.depreciation.yearlyRates;
@@ -284,11 +292,11 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
   const lowestSurvivalMilestone = SURVIVAL_MILESTONES[SURVIVAL_MILESTONES.length - 1];
   let totalLifeMonths = Math.max(fullLifeMonths, ageAtPurchaseMonths + months + 24);
   let lifeValue = buildLifeValue(totalLifeMonths, ageAtPurchaseMonths, price, yearlyRates, ageRateMultiplier);
-  let survival = buildSurvivalProbability(totalLifeMonths, lifeValue, ageAtPurchaseMonths, ageRateMultiplier, assumptions.risk);
+  let { survival, expectedRiskMonthly } = buildSurvivalAndRiskCost(totalLifeMonths, lifeValue, price, ageAtPurchaseMonths, ageRateMultiplier, assumptions.risk);
   while (survival[totalLifeMonths] > lowestSurvivalMilestone && totalLifeMonths < maxLifeMonths) {
     totalLifeMonths += 5 * 12;
     lifeValue = buildLifeValue(totalLifeMonths, ageAtPurchaseMonths, price, yearlyRates, ageRateMultiplier);
-    survival = buildSurvivalProbability(totalLifeMonths, lifeValue, ageAtPurchaseMonths, ageRateMultiplier, assumptions.risk);
+    ({ survival, expectedRiskMonthly } = buildSurvivalAndRiskCost(totalLifeMonths, lifeValue, price, ageAtPurchaseMonths, ageRateMultiplier, assumptions.risk));
   }
   const survivalMilestones = SURVIVAL_MILESTONES.map((probability) => ({
     probability,
@@ -304,6 +312,7 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
 
   const ageYears = [];
   const monthlyCost = [];
+  const riskMonthly = [];
   for (let t = 1; t <= totalLifeMonths; t++) {
     const calendarAgeYears = t / 12;
     let cost =
@@ -313,7 +322,8 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
       assumptions.running.serviceMonthly +
       (winterIntervalMonths > 0 ? assumptions.tires.setCost / winterIntervalMonths : 0) +
       (summerIntervalMonths > 0 ? assumptions.tires.setCost / summerIntervalMonths : 0) +
-      (lifeValue[t - 1] - lifeValue[t]);
+      (lifeValue[t - 1] - lifeValue[t]) +
+      expectedRiskMonthly[t];
 
     const monthsSincePurchase = t - ageAtPurchaseMonths;
     const ownedThisMonth = monthsSincePurchase >= 1 && monthsSincePurchase <= months;
@@ -328,11 +338,13 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
 
     ageYears.push(t / 12);
     monthlyCost.push(cost);
+    riskMonthly.push(expectedRiskMonthly[t]);
   }
 
   return {
     ageYears,
     monthlyCost,
+    riskMonthly,
     purchaseAgeYears: ageAtPurchaseMonths / 12,
     endOfOwnershipAgeYears: (ageAtPurchaseMonths + months) / 12,
     survivalMilestones,

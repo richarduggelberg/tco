@@ -254,6 +254,7 @@ const survivalMarkerColors = {
 function renderLifetimeChart(input) {
   const lifetime = computeLifetimeMonthlyCosts(input);
   const points = lifetime.ageYears.map((y, i) => ({ x: y, y: Math.round(lifetime.monthlyCost[i]) }));
+  const riskPoints = lifetime.ageYears.map((y, i) => ({ x: y, y: Math.round(lifetime.riskMonthly[i]) }));
 
   const survivalMarkers = lifetime.survivalMilestones.map((m) => ({
     value: m.ageYears,
@@ -267,7 +268,7 @@ function renderLifetimeChart(input) {
     data: {
       datasets: [
         {
-          label: "Kr/månad",
+          label: "Kr/månad (totalt, inkl. förväntad risk)",
           data: points,
           borderColor: "#0a6847",
           backgroundColor: "#0a6847",
@@ -275,11 +276,21 @@ function renderLifetimeChart(input) {
           borderWidth: 2,
           tension: 0.1,
         },
+        {
+          label: "Varav förväntad risk (haveri/totalhaveri)",
+          data: riskPoints,
+          borderColor: "#c2410c",
+          backgroundColor: "#c2410c",
+          pointRadius: 0,
+          borderWidth: 2,
+          borderDash: [4, 3],
+          tension: 0.1,
+        },
       ],
     },
     options: {
       plugins: {
-        legend: { display: false },
+        legend: { display: true, position: "bottom" },
         verticalMarkers: {
           markers: [
             { value: lifetime.purchaseAgeYears, color: "#b33", label: "Köp" },
