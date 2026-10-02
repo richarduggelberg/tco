@@ -74,6 +74,24 @@ ageAtPurchaseInput.addEventListener("input", updateImpliedNewPriceNote);
 updateVisibility();
 updateImpliedNewPriceNote();
 
+// Chrome/Edge filter datalist suggestions to only those matching the current value, so a
+// field already holding e.g. "15000" only shows that one match instead of all presets.
+// Clearing the value on focus (and restoring it on blur if nothing was picked) works around this.
+function enableDatalistBrowsing(id) {
+  const input = document.getElementById(id);
+  if (!input) return;
+  input.addEventListener("focus", () => {
+    input.dataset.previousValue = input.value;
+    input.value = "";
+  });
+  input.addEventListener("blur", () => {
+    if (input.value === "" && input.dataset.previousValue) {
+      input.value = input.dataset.previousValue;
+    }
+  });
+}
+["price", "ageAtPurchase", "holdingYears", "annualMileage"].forEach(enableDatalistBrowsing);
+
 function readInputs() {
   const assumptions = JSON.parse(JSON.stringify(defaultAssumptions));
 
@@ -183,6 +201,7 @@ function renderResults(result, financingMethod) {
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
+  document.activeElement?.blur(); // Ensure a focused-and-cleared datalist field restores its value first
   const input = readInputs();
   const result = computeTco(input);
   renderResults(result, input.financingMethod);
