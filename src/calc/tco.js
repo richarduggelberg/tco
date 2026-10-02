@@ -4,7 +4,6 @@ import { simulateRiskPaths } from "./risk.js";
 import { presentValue, levelMonthlyPayment, annualToMonthlyRate } from "./npv.js";
 import {
   buildConstantSeries,
-  buildResidualSeries,
   buildSeriesFromFunction,
   buildPeriodicCostSeries,
   sumSeries,
@@ -86,6 +85,7 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
   const summerTires = buildPeriodicCostSeries(months, Math.round(assumptions.tires.summerIntervalYears * 12), assumptions.tires.setCost);
   const tires = sumSeries([winterTires, summerTires]);
 
+  const loan = isLeasing ? null : loanSeries(financingMethod, price, months, assumptions.financing);
   const categorySeries = { energy, tax, insurance, service, tires };
   if (isLeasing) {
     categorySeries.leasingavgift = financing;
@@ -94,7 +94,6 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
     // räknas på eget kapital (bilens värde minus kvarvarande låneskuld), så den minskar
     // naturligt i takt med att bilen tappar värde och/eller lånet amorteras.
     const baseValueSeries = buildValueSeries(price, months, yearlyRates, [], ageAtPurchaseMonths, ageRateMultiplier);
-    const loan = loanSeries(financingMethod, price, months, assumptions.financing);
     const equity = baseValueSeries.map((value, t) => value - loan.balance[t]);
 
     const depreciation = new Array(months + 1).fill(0);
@@ -121,9 +120,24 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
   if (assumptions.risk.enabled && !isLeasing) {
     const paths = simulateRiskPaths(price, months, yearlyRates, assumptions.risk, ageAtPurchaseMonths, ageRateMultiplier);
     const monthlyCosts = paths.map((path) => {
+      // Samma kapitalkostnad/värdeminskning/låneränta-nedbrytning som den deterministiska
+      // basen, fast på den här banans (ev. återställda) värdeserie - annars skulle en
+      // bana utan haverier inte exakt reproducera deterministicTotal, och en bolåne-
+      // liknande metod (där lånet aldrig amorteras) skulle kunna ge en negativ risktillägg
+      // eftersom restvärdet krediterades fullt ut utan att netta mot kvarvarande låneskuld.
       const valueSeries = buildValueSeries(price, months, yearlyRates, path.resetMonths, ageAtPurchaseMonths, ageRateMultiplier);
-      const pathResidual = buildResidualSeries(months, valueSeries[months]);
-      const total = sumSeries([financing, energy, tax, insurance, service, tires, pathResidual, path.cashflow]);
+      const pathEquity = valueSeries.map((value, t) => value - loan.balance[t]);
+      const pathDepreciation = new Array(months + 1).fill(0);
+      const pathKapitalkostnad = new Array(months + 1).fill(0);
+      const pathLaneranta = new Array(months + 1).fill(0);
+      for (let t = 1; t <= months; t++) {
+        pathDepreciation[t] = -(valueSeries[t - 1] - valueSeries[t]);
+        pathKapitalkostnad[t] = -(monthlyDiscountRate * pathEquity[t - 1]);
+        pathLaneranta[t] = -loan.interest[t];
+      }
+      const pathSeries = [energy, tax, insurance, service, tires, pathDepreciation, pathKapitalkostnad, path.cashflow];
+      if (financingMethod !== "kontant") pathSeries.push(pathLaneranta);
+      const total = sumSeries(pathSeries);
       const npv = presentValue(total, monthlyDiscountRate);
       return levelMonthlyPayment(npv, monthlyDiscountRate, months);
     });

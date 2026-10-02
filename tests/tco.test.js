@@ -44,6 +44,16 @@ test("computeTco supports all three financing methods without throwing", () => {
   }
 });
 
+test("computeTco: risk premium is never negative, for any financing method (regression: bolan's non-amortizing loan previously under-netted the residual credit)", () => {
+  for (const method of ["kontant", "billan", "bolan"]) {
+    const assumptions = cloneAssumptions();
+    assumptions.risk.enabled = true;
+    assumptions.risk.numSimulations = 300;
+    const result = computeTco({ price: 300000, months: 60, financingMethod: method, assumptions });
+    assert.ok(result.risk.riskPremium > -1, `${method} risk premium should not be negative, got ${result.risk.riskPremium}`);
+  }
+});
+
 test("computeTco with leasing excludes residual value and haveririsk entirely", () => {
   const assumptions = cloneAssumptions();
   assumptions.risk.enabled = true; // Should be ignored for leasing regardless
