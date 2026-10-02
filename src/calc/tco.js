@@ -179,7 +179,10 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
   const isLeasing = financingMethod === "leasing";
   const monthlyDiscountRate = annualToMonthlyRate(assumptions.discountRateAnnual);
 
-  const totalLifeMonths = Math.max(ageAtPurchaseMonths + months + 24, 48);
+  // Visa hela bilens liv (en rimlig totallivslängd), men förläng vid behov så att
+  // ägandeperioden plus lite marginal efter försäljning alltid ryms.
+  const fullLifeMonths = 18 * 12;
+  const totalLifeMonths = Math.max(fullLifeMonths, ageAtPurchaseMonths + months + 24);
 
   // Bilens värde sedan tillverkning, byggt månad för månad och ankrat exakt i det kända
   // inköpspriset vid köpmånaden. Årstakten (yearlyRates) interpoleras linjärt mellan
