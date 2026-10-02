@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeTco } from "../src/calc/tco.js";
+import { computeTco, computeLifetimeMonthlyCosts } from "../src/calc/tco.js";
 import { defaultAssumptions } from "../src/data/assumptions.js";
 
 function cloneAssumptions() {
@@ -49,7 +49,10 @@ test("computeTco with leasing excludes residual value and haveririsk entirely", 
   assumptions.risk.enabled = true; // Should be ignored for leasing regardless
   const result = computeTco({ price: 300000, months: 36, financingMethod: "leasing", assumptions });
   assert.equal(result.risk, null);
-  assert.ok(!("residual" in result.categoryMonthly));
+  assert.ok(!("depreciation" in result.categoryMonthly));
+  assert.ok(!("kapitalkostnad" in result.categoryMonthly));
+  assert.ok(!("laneranta" in result.categoryMonthly));
+  assert.ok("leasingavgift" in result.categoryMonthly);
 });
 
 test("computeTco with leasing never bundles tax, but zeroes service when bundled in the fee", () => {
@@ -124,9 +127,9 @@ test("computeTco with a higher ageAtPurchaseYears retains a larger share of valu
   const resultUsed = computeTco({ price: 300000, months: 24, financingMethod: "kontant", assumptions: usedCar });
 
   // A used car (already past the steepest depreciation years) retains a higher share of its
-  // purchase price over the next 24 months than a brand new car does, so its residual
-  // deduction should be larger in magnitude.
-  assert.ok(Math.abs(resultUsed.categoryMonthly.residual) > Math.abs(resultNew.categoryMonthly.residual));
+  // purchase price over the next 24 months than a brand new car does, so it loses less value
+  // (smaller depreciation cost) over the period.
+  assert.ok(Math.abs(resultUsed.categoryMonthly.depreciation) < Math.abs(resultNew.categoryMonthly.depreciation));
 });
 
 test("computeTco applies the malus tax rate for the first malusYears, then the lower normal rate", () => {
@@ -159,9 +162,9 @@ test("computeTco: higher annual mileage than baseline depreciates the car faster
   highMileage.annualMileageKm = 30000;
   const resultHigh = computeTco({ price: 300000, months: 24, financingMethod: "kontant", assumptions: highMileage });
 
-  // A high-mileage car ages faster and retains less value, so the money you get back at the
-  // end (the residual credit) is smaller in magnitude than for a low-mileage car.
-  assert.ok(Math.abs(resultHigh.categoryMonthly.residual) < Math.abs(resultLow.categoryMonthly.residual));
+  // A high-mileage car ages faster and loses more value, so its depreciation cost is larger
+  // in magnitude than for a low-mileage car.
+  assert.ok(Math.abs(resultHigh.categoryMonthly.depreciation) > Math.abs(resultLow.categoryMonthly.depreciation));
 });
 
 test("computeTco: with mileageWeight=0, annual mileage has no effect on depreciation (pure calendar aging)", () => {
@@ -177,7 +180,7 @@ test("computeTco: with mileageWeight=0, annual mileage has no effect on deprecia
   highMileage.annualMileageKm = 30000;
   const resultHigh = computeTco({ price: 300000, months: 24, financingMethod: "kontant", assumptions: highMileage });
 
-  assert.ok(Math.abs(resultHigh.categoryMonthly.residual - resultLow.categoryMonthly.residual) < 1e-6);
+  assert.ok(Math.abs(resultHigh.categoryMonthly.depreciation - resultLow.categoryMonthly.depreciation) < 1e-6);
 });
 
 test("computeTco: higher annual mileage than baseline increases the risk of a total loss over the holding period", () => {
@@ -196,4 +199,29 @@ test("computeTco: higher annual mileage than baseline increases the risk of a to
   // Driving more than baseline ages the car faster (higher equivalent hazard age), so a total
   // loss (haveri) is more likely to occur at some point during the holding period.
   assert.ok(resultHigh.risk.shareWithTotalLoss > resultLow.risk.shareWithTotalLoss);
+});
+
+test("computeLifetimeMonthlyCosts returns a finite cost series spanning the whole car life", () => {
+  const assumptions = cloneAssumptions();
+  const result = computeLifetimeMonthlyCosts({ price: 300000, months: 60, financingMethod: "billan", assumptions });
+  assert.ok(result.monthlyCost.length > 0);
+  assert.equal(result.monthlyCost.length, result.ageYears.length);
+  assert.ok(result.monthlyCost.every((v) => Number.isFinite(v)));
+});
+
+test("computeLifetimeMonthlyCosts marks purchase/end-of-ownership ages consistently with the inputs", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.ageAtPurchaseYears = 2;
+  const result = computeLifetimeMonthlyCosts({ price: 300000, months: 36, financingMethod: "kontant", assumptions });
+  assert.equal(result.purchaseAgeYears, 2);
+  assert.equal(result.endOfOwnershipAgeYears, 5);
+});
+
+test("computeLifetimeMonthlyCosts shows a higher monthly cost during ownership than right after selling (financing drops away)", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.ageAtPurchaseYears = 0;
+  const result = computeLifetimeMonthlyCosts({ price: 300000, months: 36, financingMethod: "billan", assumptions });
+  const lastOwnedIdx = Math.round(result.endOfOwnershipAgeYears * 12) - 1;
+  const firstUnownedIdx = lastOwnedIdx + 1;
+  assert.ok(result.monthlyCost[lastOwnedIdx] > result.monthlyCost[firstUnownedIdx]);
 });

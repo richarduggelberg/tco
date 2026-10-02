@@ -34,8 +34,7 @@ export const defaultAssumptions = {
     },
     bolan: {
       downPaymentRatio: 0.0, // Hela beloppet läggs ofta på lånet
-      interestRateAnnual: 0.035,
-      amortizationRateAnnual: 0.01, // Enligt amorteringskravet, 1% eller 2% beroende på belåningsgrad
+      interestRateAnnual: 0.026, // Lånet antas aldrig amorteras under innehavstiden - bara räntan räknas som kostnad
     },
     leasing: {
       monthlyFee: 4500, // Schablon - ersätt med en verklig privatleasingoffert
@@ -48,11 +47,10 @@ export const defaultAssumptions = {
   // Drift
   running: {
     serviceMonthly: 400, // Periodiserad service/besiktning
-    fuelPricePerLiter: 17.5, // SEK/liter, bensin/diesel-snitt
-    consumptionLPer10km: 0.6, // L/mil → 6.0 L/100km
-    electricityPricePerKwh: 1.8, // SEK/kWh, fallback om live-data inte går att hämta
-    consumptionKwhPer10km: 1.8, // kWh/mil
     fuelType: "bensin", // "bensin" | "diesel" | "el"
+    bensin: { pricePerLiter: 18, consumptionLPer100km: 7.0 },
+    diesel: { pricePerLiter: 21, consumptionLPer100km: 5.5 },
+    el: { pricePerKwh: 2, consumptionKwhPer100km: 18 },
   },
 
   // Försäkring: växlar automatiskt mellan halv- och helförsäkring utifrån bilens kalenderålder.

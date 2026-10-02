@@ -17,11 +17,13 @@ export function formatNumber(value) {
 }
 
 export const categoryLabels = {
-  financing: "Finansiering (kapitalkostnad/lån/leasingavgift)",
+  leasingavgift: "Leasingavgift",
+  kapitalkostnad: "Kapitalkostnad (alternativkostnad på bundet kapital)",
+  laneranta: "Låneränta",
   energy: "Bränsle/el",
   tax: "Fordonsskatt",
   insurance: "Försäkring",
   service: "Service, besiktning",
   tires: "Däck (vinter/sommar)",
-  residual: "Restvärde (avgår)",
+  depreciation: "Värdeminskning",
 };

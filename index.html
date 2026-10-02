@@ -117,15 +117,6 @@
             <option value="el">El</option>
           </select>
         </div>
-        <div id="elomrade-field" class="hidden">
-          <label for="elomrade">Elområde</label>
-          <select id="elomrade">
-            <option value="SE1">SE1 (Norra Sverige)</option>
-            <option value="SE2">SE2 (Norra Mellansverige)</option>
-            <option value="SE3" selected>SE3 (Södra Mellansverige)</option>
-            <option value="SE4">SE4 (Södra Sverige)</option>
-          </select>
-        </div>
       </div>
 
       <h2>Finansiering</h2>
@@ -172,11 +163,7 @@
           </div>
           <div>
             <label for="bolanRate">Ränta (%/år)</label>
-            <input type="number" id="bolanRate" value="3.5" min="0" max="15" step="any">
-          </div>
-          <div>
-            <label for="bolanAmortization">Amortering (%/år)</label>
-            <input type="number" id="bolanAmortization" value="1" min="0" max="10" step="any">
+            <input type="number" id="bolanRate" value="2.6" min="0" max="15" step="any">
           </div>
         </div>
       </fieldset>
@@ -299,6 +286,30 @@
             <label for="mileageWeight">Körsträckans vikt i åldrandet (%)</label>
             <input type="number" id="mileageWeight" value="70" min="0" max="100" step="any">
           </div>
+          <div>
+            <label for="bensinPrice">Bensinpris (kr/liter)</label>
+            <input type="number" id="bensinPrice" value="18" min="0" step="any">
+          </div>
+          <div>
+            <label for="bensinConsumption">Bensinförbrukning (l/100 km)</label>
+            <input type="number" id="bensinConsumption" value="7.0" min="0" step="any">
+          </div>
+          <div>
+            <label for="dieselPrice">Dieselpris (kr/liter)</label>
+            <input type="number" id="dieselPrice" value="21" min="0" step="any">
+          </div>
+          <div>
+            <label for="dieselConsumption">Dieselförbrukning (l/100 km)</label>
+            <input type="number" id="dieselConsumption" value="5.5" min="0" step="any">
+          </div>
+          <div>
+            <label for="elPrice">Elpris (kr/kWh)</label>
+            <input type="number" id="elPrice" value="2" min="0" step="any">
+          </div>
+          <div>
+            <label for="elConsumption">Elförbrukning (kWh/100 km)</label>
+            <input type="number" id="elConsumption" value="18" min="0" step="any">
+          </div>
         </div>
         <p class="note">Haveririsken beräknas med en Monte Carlo-simulering (ökande haverisannolikhet med
           bilens "ekvivalenta ålder" sedan tillverkning - en blandning av kalenderålder och körsträcka
@@ -331,6 +342,17 @@
           <tbody id="breakdown-body"></tbody>
         </table>
         <canvas id="breakdown-chart" height="140"></canvas>
+      </div>
+
+      <div class="card">
+        <h2>Månadskostnad över bilens liv</h2>
+        <p class="note">
+          Visar en nominell (ej nuvärdesberäknad) månadskostnadskurva för bilen sett över hela dess liv
+          sedan tillverkning. Drift- och åldersrelaterade poster (skatt, försäkring, bränsle/el, service,
+          däck, värdeminskning) visas genom hela kurvan; finansieringskostnaden (kapitalkostnad/låneränta/
+          leasingavgift) läggs bara på under den markerade ägandeperioden.
+        </p>
+        <canvas id="lifetime-chart" height="140"></canvas>
       </div>
 
       <p class="note">

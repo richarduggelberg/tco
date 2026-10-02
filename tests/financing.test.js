@@ -29,11 +29,12 @@ test("billanCashflow settles remaining balance if holding period shorter than lo
   assert.ok(lastPayment < regularPayment, "final cashflow should include lump-sum remaining balance");
 });
 
-test("bolanCashflow applies interest-only-like low amortization, leaving balance at end", () => {
-  const cf = bolanCashflow(300000, 24, { downPaymentRatio: 0, interestRateAnnual: 0.035, amortizationRateAnnual: 0.01 });
+test("bolanCashflow charges a flat interest-only payment with no amortization", () => {
+  const cf = bolanCashflow(300000, 24, { downPaymentRatio: 0, interestRateAnnual: 0.035 });
   assert.equal(Math.abs(cf[0]), 0);
-  // With only 1%/year amortization over 2 years, most of the loan remains -> balance paid at t=months
-  assert.ok(cf[24] < cf[12], "bolan cashflow at final month should include remaining debt settlement");
+  // No amortization modeled, so the loan balance (and thus the interest payment) never changes
+  assert.ok(Math.abs(cf[24] - cf[12]) < 1e-6, "bolan interest payment should stay level every month");
+  assert.ok(Math.abs(cf[12]) < 300000 * (0.035 / 12) + 1, "payment should be close to flat interest on the full loan");
 });
 
 test("leasingCashflow charges a level monthly fee with no residual/ownership cashflow", () => {

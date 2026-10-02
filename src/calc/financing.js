@@ -12,61 +12,101 @@ export function kontantCashflow(price, months) {
   return cf;
 }
 
-export function billanCashflow(price, months, { downPaymentRatio, interestRateAnnual, termYears }) {
-  const cf = new Array(months + 1).fill(0);
+function billanSchedule(price, months, { downPaymentRatio, interestRateAnnual, termYears }) {
   const downPayment = price * downPaymentRatio;
   const loanAmount = price - downPayment;
   const monthlyRate = annualToMonthlyRate(interestRateAnnual);
   const termMonths = Math.round(termYears * 12);
-
-  cf[0] = -downPayment;
-
   const payment =
     monthlyRate === 0
       ? loanAmount / termMonths
       : (loanAmount * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -termMonths));
 
-  let balance = loanAmount;
+  const balance = new Array(months + 1).fill(0);
+  const interest = new Array(months + 1).fill(0);
+  const principal = new Array(months + 1).fill(0);
+  balance[0] = loanAmount;
+  let bal = loanAmount;
   for (let t = 1; t <= months; t++) {
-    if (t <= termMonths && balance > 0.01) {
-      const interest = balance * monthlyRate;
-      const principal = Math.min(payment - interest, balance);
-      balance -= principal;
-      cf[t] -= interest + principal;
+    if (t <= termMonths && bal > 0.01) {
+      const int = bal * monthlyRate;
+      const princ = Math.min(payment - int, bal);
+      bal -= princ;
+      interest[t] = int;
+      principal[t] = princ;
     }
+    balance[t] = bal;
+  }
+  return { downPayment, balance, interest, principal };
+}
+
+export function billanCashflow(price, months, params) {
+  const { downPayment, balance, interest, principal } = billanSchedule(price, months, params);
+  const cf = new Array(months + 1).fill(0);
+  cf[0] = -downPayment;
+  for (let t = 1; t <= months; t++) {
+    cf[t] -= interest[t] + principal[t];
   }
   // Om lånet inte är slutbetalt när innehavsperioden tar slut måste resterande
   // skuld lösas (t.ex. ur försäljningslikviden) - räknas som en kostnad då.
-  if (balance > 0.01) {
-    cf[months] -= balance;
+  if (balance[months] > 0.01) {
+    cf[months] -= balance[months];
   }
   return cf;
 }
 
-export function bolanCashflow(price, months, { downPaymentRatio, interestRateAnnual, amortizationRateAnnual }) {
-  const cf = new Array(months + 1).fill(0);
+/**
+ * Lånebalans och räntedel per månad, för att kunna räkna fram låneränta och kvarvarande
+ * eget kapital separat (se tco.js). Balansen sätts till 0 vid periodens slut om lånet inte
+ * hunnit amorteras klart, eftersom resterande skuld då löses i samband med försäljningen.
+ */
+export function billanLoanSeries(price, months, params) {
+  const { balance, interest } = billanSchedule(price, months, params);
+  const adjustedBalance = balance.slice();
+  if (adjustedBalance[months] > 0.01) adjustedBalance[months] = 0;
+  return { balance: adjustedBalance, interest };
+}
+
+function bolanSchedule(price, months, { downPaymentRatio, interestRateAnnual }) {
   const downPayment = price * downPaymentRatio;
   const loanAmount = price - downPayment;
   const monthlyRate = annualToMonthlyRate(interestRateAnnual);
-  const monthlyAmortization = (loanAmount * amortizationRateAnnual) / 12;
+  const monthlyInterest = loanAmount * monthlyRate;
 
-  cf[0] = -downPayment;
-
-  let balance = loanAmount;
+  const balance = new Array(months + 1).fill(loanAmount);
+  const interest = new Array(months + 1).fill(0);
   for (let t = 1; t <= months; t++) {
-    if (balance > 0.01) {
-      const interest = balance * monthlyRate;
-      const amortization = Math.min(monthlyAmortization, balance);
-      balance -= amortization;
-      cf[t] -= interest + amortization;
-    }
+    interest[t] = monthlyInterest;
   }
-  // Bolån amorteras ofta långsamt - kvarstående skuld vid periodens slut är en
-  // reell kostnad som fortsätter att belasta låntagaren efter att bilen sålts.
-  if (balance > 0.01) {
-    cf[months] -= balance;
+  return { downPayment, balance, interest };
+}
+
+export function bolanCashflow(price, months, params) {
+  const { downPayment, interest } = bolanSchedule(price, months, params);
+  const cf = new Array(months + 1).fill(0);
+  cf[0] = -downPayment;
+  // Amortering är ingen verklig kostnad (den bygger bara upp eget kapital du behåller),
+  // så lånet antas aldrig amorteras här - bara en platt ränta på hela lånebeloppet räknas.
+  for (let t = 1; t <= months; t++) {
+    cf[t] -= interest[t];
   }
   return cf;
+}
+
+/** Lånebalans (konstant, inget amorteras) och räntedel per månad för bolån. */
+export function bolanLoanSeries(price, months, params) {
+  const { balance, interest } = bolanSchedule(price, months, params);
+  return { balance, interest };
+}
+
+/**
+ * Lånebalans/räntedel per månad för given finansieringsmetod. Kontant/leasing har inget lån
+ * (allt eget kapital = bilens värde), så balans och ränta är 0 för alla månader.
+ */
+export function loanSeries(method, price, months, financingAssumptions) {
+  if (method === "billan") return billanLoanSeries(price, months, financingAssumptions.billan);
+  if (method === "bolan") return bolanLoanSeries(price, months, financingAssumptions.bolan);
+  return { balance: new Array(months + 1).fill(0), interest: new Array(months + 1).fill(0) };
 }
 
 /**

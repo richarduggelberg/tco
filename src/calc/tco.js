@@ -1,5 +1,5 @@
-import { financingCashflow } from "./financing.js";
-import { buildValueSeries } from "./depreciation.js";
+import { financingCashflow, loanSeries } from "./financing.js";
+import { buildValueSeries, impliedNewPrice } from "./depreciation.js";
 import { simulateRiskPaths } from "./risk.js";
 import { presentValue, levelMonthlyPayment, annualToMonthlyRate } from "./npv.js";
 import {
@@ -86,11 +86,28 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
   const summerTires = buildPeriodicCostSeries(months, Math.round(assumptions.tires.summerIntervalYears * 12), assumptions.tires.setCost);
   const tires = sumSeries([winterTires, summerTires]);
 
-  const categorySeries = { financing, energy, tax, insurance, service, tires };
-  if (!isLeasing) {
-    // Deterministisk bas: ingen risk inträffar, bilen åldras utan avbrott.
+  const categorySeries = { energy, tax, insurance, service, tires };
+  if (isLeasing) {
+    categorySeries.leasingavgift = financing;
+  } else {
+    // Deterministisk bas: ingen risk inträffar, bilen åldras utan avbrott. Kapitalkostnaden
+    // räknas på eget kapital (bilens värde minus kvarvarande låneskuld), så den minskar
+    // naturligt i takt med att bilen tappar värde och/eller lånet amorteras.
     const baseValueSeries = buildValueSeries(price, months, yearlyRates, [], ageAtPurchaseMonths, ageRateMultiplier);
-    categorySeries.residual = buildResidualSeries(months, baseValueSeries[months]);
+    const loan = loanSeries(financingMethod, price, months, assumptions.financing);
+    const equity = baseValueSeries.map((value, t) => value - loan.balance[t]);
+
+    const depreciation = new Array(months + 1).fill(0);
+    const kapitalkostnad = new Array(months + 1).fill(0);
+    const laneranta = new Array(months + 1).fill(0);
+    for (let t = 1; t <= months; t++) {
+      depreciation[t] = -(baseValueSeries[t - 1] - baseValueSeries[t]);
+      kapitalkostnad[t] = -(monthlyDiscountRate * equity[t - 1]);
+      laneranta[t] = -loan.interest[t];
+    }
+    categorySeries.depreciation = depreciation;
+    categorySeries.kapitalkostnad = kapitalkostnad;
+    if (financingMethod !== "kontant") categorySeries.laneranta = laneranta;
   }
 
   const categoryMonthly = {};
@@ -123,4 +140,77 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
   }
 
   return { categoryMonthly, deterministicTotal, risk };
+}
+
+/**
+ * Bygger en nominell (ej nuvärdesberäknad) månadskostnadskurva över bilens HELA liv
+ * (sedan tillverkning), för att visualisera hur kostnaden varierar med bilens ålder -
+ * oavsett vem som äger den. Drift-/åldersrelaterade poster (skatt, försäkring, bränsle/el,
+ * service, däck, värdeminskning) visas genom hela kurvan, medan finansieringsrelaterade
+ * poster (kapitalkostnad/låneränta/leasingavgift) bara läggs på under den egna
+ * ägandeperioden (markerad med de två brytpunkterna som returneras).
+ * @param {object} input - { price, months, financingMethod, assumptions }
+ * @returns {{ ageYears: number[], monthlyCost: number[], purchaseAgeYears: number, endOfOwnershipAgeYears: number }}
+ */
+export function computeLifetimeMonthlyCosts({ price, months, financingMethod, assumptions }) {
+  const yearlyRates = assumptions.depreciation.yearlyRates;
+  const ageAtPurchaseMonths = Math.round((assumptions.ageAtPurchaseYears ?? 0) * 12);
+  const { baselineAnnualMileageKm, mileageWeight } = assumptions.vehicleAge;
+  const mileageRatio = assumptions.annualMileageKm / baselineAnnualMileageKm;
+  const ageRateMultiplier = mileageWeight * mileageRatio + (1 - mileageWeight);
+  const isLeasing = financingMethod === "leasing";
+  const monthlyDiscountRate = annualToMonthlyRate(assumptions.discountRateAnnual);
+
+  const totalLifeMonths = Math.max(ageAtPurchaseMonths + months + 24, 48);
+
+  // Bilens värde sedan tillverkning: kalenderåldrande fram till köpet (körsträckan dessförinnan
+  // är okänd och antas vara baslinjen), sedan samma körsträckeviktade åldrande som i computeTco.
+  const preOwnershipValue = buildValueSeries(impliedNewPrice(price, ageAtPurchaseMonths, yearlyRates), ageAtPurchaseMonths, yearlyRates, [], 0, 1);
+  const postOwnershipValue = buildValueSeries(price, totalLifeMonths - ageAtPurchaseMonths, yearlyRates, [], ageAtPurchaseMonths, ageRateMultiplier);
+  const lifeValue = new Array(totalLifeMonths + 1);
+  for (let u = 0; u <= totalLifeMonths; u++) {
+    lifeValue[u] = u <= ageAtPurchaseMonths ? preOwnershipValue[u] : postOwnershipValue[u - ageAtPurchaseMonths];
+  }
+
+  const energyMonthly = computeEnergyMonthly(assumptions.annualMileageKm, assumptions.running);
+  const winterIntervalMonths = Math.round(assumptions.tires.winterIntervalYears * 12);
+  const summerIntervalMonths = Math.round(assumptions.tires.summerIntervalYears * 12);
+
+  const loan = isLeasing ? null : loanSeries(financingMethod, price, months, assumptions.financing);
+  const leasingCf = isLeasing ? financingCashflow(financingMethod, price, months, assumptions.financing) : null;
+
+  const ageYears = [];
+  const monthlyCost = [];
+  for (let t = 1; t <= totalLifeMonths; t++) {
+    const calendarAgeYears = t / 12;
+    let cost =
+      energyMonthly +
+      taxMonthlyCost(calendarAgeYears, assumptions.tax) +
+      insuranceMonthlyCost(calendarAgeYears, assumptions.insurance) +
+      assumptions.running.serviceMonthly +
+      (winterIntervalMonths > 0 && t % winterIntervalMonths === 0 ? assumptions.tires.setCost : 0) +
+      (summerIntervalMonths > 0 && t % summerIntervalMonths === 0 ? assumptions.tires.setCost : 0) +
+      (lifeValue[t - 1] - lifeValue[t]);
+
+    const monthsSincePurchase = t - ageAtPurchaseMonths;
+    const ownedThisMonth = monthsSincePurchase >= 1 && monthsSincePurchase <= months;
+    if (ownedThisMonth) {
+      if (isLeasing) {
+        cost += -leasingCf[monthsSincePurchase];
+      } else {
+        const equityPrev = lifeValue[t - 1] - loan.balance[monthsSincePurchase - 1];
+        cost += monthlyDiscountRate * equityPrev + loan.interest[monthsSincePurchase];
+      }
+    }
+
+    ageYears.push(t / 12);
+    monthlyCost.push(cost);
+  }
+
+  return {
+    ageYears,
+    monthlyCost,
+    purchaseAgeYears: ageAtPurchaseMonths / 12,
+    endOfOwnershipAgeYears: (ageAtPurchaseMonths + months) / 12,
+  };
 }

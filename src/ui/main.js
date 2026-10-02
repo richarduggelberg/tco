@@ -1,17 +1,14 @@
-import { computeTco } from "../calc/tco.js";
+import { computeTco, computeLifetimeMonthlyCosts } from "../calc/tco.js";
 import { impliedNewPrice } from "../calc/depreciation.js";
 import { defaultAssumptions, fuelTypeDefaults } from "../data/assumptions.js";
-import { fetchAverageSpotPrice } from "../data/elpris.js";
 import { formatCurrency, categoryLabels } from "./format.js";
 
 const form = document.getElementById("tco-form");
 const fuelTypeSelect = document.getElementById("fuelType");
-const elomradeField = document.getElementById("elomrade-field");
 const financingMethodSelect = document.getElementById("financingMethod");
 const billanFields = document.getElementById("billan-fields");
 const bolanFields = document.getElementById("bolan-fields");
 const leasingFields = document.getElementById("leasing-fields");
-const elomradeSelect = document.getElementById("elomrade");
 const priceInput = document.getElementById("price");
 const ageAtPurchaseInput = document.getElementById("ageAtPurchase");
 const impliedNewPriceNote = document.getElementById("implied-newprice-note");
@@ -21,19 +18,43 @@ const resultMonthlyEl = document.getElementById("result-monthly");
 const resultIntervalEl = document.getElementById("result-interval");
 const breakdownBody = document.getElementById("breakdown-body");
 const chartCanvas = document.getElementById("breakdown-chart");
+const lifetimeChartCanvas = document.getElementById("lifetime-chart");
 
 let chartInstance = null;
-let liveElectricityPrice = null;
+let lifetimeChartInstance = null;
+
+// Ritar lodräta markörlinjer (utan att behöva Chart.js annotation-pluginet) för köpålder
+// och slutet av ägandeperioden ovanpå livscykel-grafen.
+const verticalMarkerPlugin = {
+  id: "verticalMarkers",
+  afterDraw(chart, _args, opts) {
+    const markers = opts?.markers ?? [];
+    if (!markers.length) return;
+    const { ctx, chartArea, scales } = chart;
+    const xScale = scales.x;
+    ctx.save();
+    for (const marker of markers) {
+      const xPixel = xScale.getPixelForValue(marker.value);
+      ctx.beginPath();
+      ctx.setLineDash([6, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = marker.color;
+      ctx.moveTo(xPixel, chartArea.top);
+      ctx.lineTo(xPixel, chartArea.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = marker.color;
+      ctx.font = "11px sans-serif";
+      ctx.fillText(marker.label, xPixel + 4, chartArea.top + 12);
+    }
+    ctx.restore();
+  },
+};
 
 function updateVisibility() {
-  elomradeField.classList.toggle("hidden", fuelTypeSelect.value !== "el");
   billanFields.classList.toggle("hidden", financingMethodSelect.value !== "billan");
   bolanFields.classList.toggle("hidden", financingMethodSelect.value !== "bolan");
   leasingFields.classList.toggle("hidden", financingMethodSelect.value !== "leasing");
-}
-
-async function refreshElectricityPrice() {
-  liveElectricityPrice = await fetchAverageSpotPrice(elomradeSelect.value, defaultAssumptions.running.electricityPricePerKwh);
 }
 
 function updateImpliedNewPriceNote() {
@@ -62,11 +83,7 @@ function applyFuelTypeDefaults() {
 
 fuelTypeSelect.addEventListener("change", () => {
   updateVisibility();
-  if (fuelTypeSelect.value === "el") refreshElectricityPrice();
   applyFuelTypeDefaults();
-});
-elomradeSelect.addEventListener("change", () => {
-  if (fuelTypeSelect.value === "el") refreshElectricityPrice();
 });
 financingMethodSelect.addEventListener("change", updateVisibility);
 priceInput.addEventListener("input", updateImpliedNewPriceNote);
@@ -106,9 +123,12 @@ function readInputs() {
   assumptions.vehicleAge.mileageWeight = Number(document.getElementById("mileageWeight").value) / 100;
 
   assumptions.running.fuelType = fuelTypeSelect.value;
-  if (fuelTypeSelect.value === "el" && liveElectricityPrice !== null) {
-    assumptions.running.electricityPricePerKwh = liveElectricityPrice;
-  }
+  assumptions.running.bensin.pricePerLiter = Number(document.getElementById("bensinPrice").value);
+  assumptions.running.bensin.consumptionLPer100km = Number(document.getElementById("bensinConsumption").value);
+  assumptions.running.diesel.pricePerLiter = Number(document.getElementById("dieselPrice").value);
+  assumptions.running.diesel.consumptionLPer100km = Number(document.getElementById("dieselConsumption").value);
+  assumptions.running.el.pricePerKwh = Number(document.getElementById("elPrice").value);
+  assumptions.running.el.consumptionKwhPer100km = Number(document.getElementById("elConsumption").value);
   assumptions.insurance.halvMonthly = Number(document.getElementById("insuranceHalv").value);
   assumptions.insurance.helMonthly = Number(document.getElementById("insuranceHel").value);
   assumptions.insurance.helStartYears = Number(document.getElementById("insuranceHelStart").value);
@@ -127,7 +147,6 @@ function readInputs() {
   assumptions.financing.billan.termYears = Number(document.getElementById("billanTerm").value);
   assumptions.financing.bolan.downPaymentRatio = Number(document.getElementById("bolanDownPayment").value) / 100;
   assumptions.financing.bolan.interestRateAnnual = Number(document.getElementById("bolanRate").value) / 100;
-  assumptions.financing.bolan.amortizationRateAnnual = Number(document.getElementById("bolanAmortization").value) / 100;
   assumptions.financing.leasing.monthlyFee = Number(document.getElementById("leasingFee").value);
   assumptions.financing.leasing.firstPaymentExtra = Number(document.getElementById("leasingFirstPayment").value);
   assumptions.financing.leasing.serviceIncluded = document.getElementById("leasingServiceIncluded").value === "true";
@@ -199,10 +218,50 @@ function renderResults(result, financingMethod) {
   });
 }
 
+function renderLifetimeChart(input) {
+  const lifetime = computeLifetimeMonthlyCosts(input);
+  const points = lifetime.ageYears.map((y, i) => ({ x: y, y: Math.round(lifetime.monthlyCost[i]) }));
+
+  if (lifetimeChartInstance) lifetimeChartInstance.destroy();
+  lifetimeChartInstance = new Chart(lifetimeChartCanvas, {
+    type: "line",
+    data: {
+      datasets: [
+        {
+          label: "Kr/månad",
+          data: points,
+          borderColor: "#0a6847",
+          backgroundColor: "#0a6847",
+          pointRadius: 0,
+          borderWidth: 2,
+          tension: 0.1,
+        },
+      ],
+    },
+    options: {
+      plugins: {
+        legend: { display: false },
+        verticalMarkers: {
+          markers: [
+            { value: lifetime.purchaseAgeYears, color: "#b33", label: "Köp" },
+            { value: lifetime.endOfOwnershipAgeYears, color: "#555", label: "Säljs" },
+          ],
+        },
+      },
+      scales: {
+        x: { type: "linear", title: { display: true, text: "Bilens ålder (år)" } },
+        y: { beginAtZero: true, title: { display: true, text: "Kr/månad" } },
+      },
+    },
+    plugins: [verticalMarkerPlugin],
+  });
+}
+
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   document.activeElement?.blur(); // Ensure a focused-and-cleared datalist field restores its value first
   const input = readInputs();
   const result = computeTco(input);
   renderResults(result, input.financingMethod);
+  renderLifetimeChart(input);
 });

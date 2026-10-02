@@ -52,8 +52,10 @@ export function sumSeries(seriesList) {
 /** Beräknar månatlig drivmedels-/elkostnad baserat på årlig körsträcka och förbrukning. */
 export function computeEnergyMonthly(annualMileageKm, running) {
   const monthlyMileageKm = annualMileageKm / 12;
+  const per100km = monthlyMileageKm / 100;
   if (running.fuelType === "el") {
-    return (monthlyMileageKm / 10) * running.consumptionKwhPer10km * running.electricityPricePerKwh;
+    return per100km * running.el.consumptionKwhPer100km * running.el.pricePerKwh;
   }
-  return (monthlyMileageKm / 10) * running.consumptionLPer10km * running.fuelPricePerLiter;
+  const fuel = running[running.fuelType];
+  return per100km * fuel.consumptionLPer100km * fuel.pricePerLiter;
 }
