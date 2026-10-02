@@ -1,5 +1,5 @@
 import { financingCashflow, loanSeries } from "./financing.js";
-import { buildValueSeries, impliedNewPrice } from "./depreciation.js";
+import { buildValueSeries } from "./depreciation.js";
 import { simulateRiskPaths } from "./risk.js";
 import { presentValue, levelMonthlyPayment, annualToMonthlyRate } from "./npv.js";
 import {
@@ -143,6 +143,24 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
 }
 
 /**
+ * Linjärt interpolerad årlig värdeminskningstakt mellan det år som innehåller
+ * `ageYears` och nästa år, för att undvika ett abrupt hopp i takten vid varje årsskifte.
+ */
+function interpolatedAnnualRate(ageYears, yearlyRates) {
+  const yearIdx = Math.max(Math.floor(ageYears), 0);
+  const frac = ageYears - yearIdx;
+  const rateCurrent = yearlyRates[Math.min(yearIdx, yearlyRates.length - 1)];
+  const rateNext = yearlyRates[Math.min(yearIdx + 1, yearlyRates.length - 1)];
+  return rateCurrent * (1 - frac) + rateNext * frac;
+}
+
+/** Andel av värdet som finns kvar efter en månad, vid given ålder (i år) mitt i den månaden. */
+function smoothMonthlySurvivalFactor(ageYearsAtMidpoint, yearlyRates) {
+  const annualRate = interpolatedAnnualRate(ageYearsAtMidpoint, yearlyRates);
+  return Math.pow(1 - annualRate, 1 / 12);
+}
+
+/**
  * Bygger en nominell (ej nuvärdesberäknad) månadskostnadskurva över bilens HELA liv
  * (sedan tillverkning), för att visualisera hur kostnaden varierar med bilens ålder -
  * oavsett vem som äger den. Drift-/åldersrelaterade poster (skatt, försäkring, bränsle/el,
@@ -163,13 +181,23 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
 
   const totalLifeMonths = Math.max(ageAtPurchaseMonths + months + 24, 48);
 
-  // Bilens värde sedan tillverkning: kalenderåldrande fram till köpet (körsträckan dessförinnan
-  // är okänd och antas vara baslinjen), sedan samma körsträckeviktade åldrande som i computeTco.
-  const preOwnershipValue = buildValueSeries(impliedNewPrice(price, ageAtPurchaseMonths, yearlyRates), ageAtPurchaseMonths, yearlyRates, [], 0, 1);
-  const postOwnershipValue = buildValueSeries(price, totalLifeMonths - ageAtPurchaseMonths, yearlyRates, [], ageAtPurchaseMonths, ageRateMultiplier);
+  // Bilens värde sedan tillverkning, byggt månad för månad och ankrat exakt i det kända
+  // inköpspriset vid köpmånaden. Årstakten (yearlyRates) interpoleras linjärt mellan
+  // intilliggande år istället för att växla abrupt vid varje årsskifte, så att kurvan
+  // (och därmed värdeminskningen per månad) blir mjuk istället för att göra ett hopp var 12:e månad.
   const lifeValue = new Array(totalLifeMonths + 1);
-  for (let u = 0; u <= totalLifeMonths; u++) {
-    lifeValue[u] = u <= ageAtPurchaseMonths ? preOwnershipValue[u] : postOwnershipValue[u - ageAtPurchaseMonths];
+  lifeValue[ageAtPurchaseMonths] = price;
+  let forwardValue = price;
+  for (let u = ageAtPurchaseMonths + 1; u <= totalLifeMonths; u++) {
+    const effectiveAgePrev = ageAtPurchaseMonths + (u - 1 - ageAtPurchaseMonths) * ageRateMultiplier;
+    const effectiveAgeCur = ageAtPurchaseMonths + (u - ageAtPurchaseMonths) * ageRateMultiplier;
+    forwardValue *= smoothMonthlySurvivalFactor((effectiveAgePrev + effectiveAgeCur) / 2 / 12, yearlyRates);
+    lifeValue[u] = forwardValue;
+  }
+  let backwardValue = price;
+  for (let u = ageAtPurchaseMonths - 1; u >= 0; u--) {
+    backwardValue /= smoothMonthlySurvivalFactor((u + u + 1) / 2 / 12, yearlyRates);
+    lifeValue[u] = backwardValue;
   }
 
   const energyMonthly = computeEnergyMonthly(assumptions.annualMileageKm, assumptions.running);
@@ -188,8 +216,8 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
       taxMonthlyCost(calendarAgeYears, assumptions.tax) +
       insuranceMonthlyCost(calendarAgeYears, assumptions.insurance) +
       assumptions.running.serviceMonthly +
-      (winterIntervalMonths > 0 && t % winterIntervalMonths === 0 ? assumptions.tires.setCost : 0) +
-      (summerIntervalMonths > 0 && t % summerIntervalMonths === 0 ? assumptions.tires.setCost : 0) +
+      (winterIntervalMonths > 0 ? assumptions.tires.setCost / winterIntervalMonths : 0) +
+      (summerIntervalMonths > 0 ? assumptions.tires.setCost / summerIntervalMonths : 0) +
       (lifeValue[t - 1] - lifeValue[t]);
 
     const monthsSincePurchase = t - ageAtPurchaseMonths;
