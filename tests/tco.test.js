@@ -54,6 +54,14 @@ test("computeTco: risk premium is never negative, for any financing method (regr
   }
 });
 
+test("computeTco: kapitalkostnad is never negative (regression: bolan with 0% kontantinsats has non-amortizing debt exceeding depreciated car value, which should not yield a negative capital cost)", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = false;
+  assumptions.financing.bolan.downPaymentRatio = 0;
+  const result = computeTco({ price: 300000, months: 60, financingMethod: "bolan", assumptions });
+  assert.ok(result.categoryMonthly.kapitalkostnad >= -1e-9, `kapitalkostnad should not be negative, got ${result.categoryMonthly.kapitalkostnad}`);
+});
+
 test("computeTco with leasing excludes residual value and haveririsk entirely", () => {
   const assumptions = cloneAssumptions();
   assumptions.risk.enabled = true; // Should be ignored for leasing regardless

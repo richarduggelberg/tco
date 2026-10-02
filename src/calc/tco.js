@@ -101,7 +101,9 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
     const laneranta = new Array(months + 1).fill(0);
     for (let t = 1; t <= months; t++) {
       depreciation[t] = -(baseValueSeries[t - 1] - baseValueSeries[t]);
-      kapitalkostnad[t] = -(monthlyDiscountRate * equity[t - 1]);
+      // Negativt eget kapital (lånet större än bilens värde, t.ex. bolån utan kontantinsats)
+      // är redan en kostnad via låneräntan - ska inte dessutom ge en negativ kapitalkostnad.
+      kapitalkostnad[t] = -(monthlyDiscountRate * Math.max(equity[t - 1], 0));
       laneranta[t] = -loan.interest[t];
     }
     categorySeries.depreciation = depreciation;
@@ -132,7 +134,7 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
       const pathLaneranta = new Array(months + 1).fill(0);
       for (let t = 1; t <= months; t++) {
         pathDepreciation[t] = -(valueSeries[t - 1] - valueSeries[t]);
-        pathKapitalkostnad[t] = -(monthlyDiscountRate * pathEquity[t - 1]);
+        pathKapitalkostnad[t] = -(monthlyDiscountRate * Math.max(pathEquity[t - 1], 0));
         pathLaneranta[t] = -loan.interest[t];
       }
       const pathSeries = [energy, tax, insurance, service, tires, pathDepreciation, pathKapitalkostnad, path.cashflow];
