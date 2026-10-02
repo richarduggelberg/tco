@@ -56,7 +56,11 @@ export function simulateOnePath(initialValue, months, yearlyRates, riskParams, a
       const currentValue = valueAtAge(initialValue, equivalentAge, yearlyRates, ageAtPurchaseMonths);
       if (repairCost > riskParams.totalLossThreshold * currentValue) {
         numTotalLosses++;
-        cf[t] -= currentValue; // Köp av likvärdig bil till dåvarande marknadsvärde
+        // Ersättningsbilen antas vara likvärdig DEN URSPRUNGLIGA köpet (samma kalenderålder
+        // som vid köptillfället, se resetMonths/age=0 nedan) - kostar därför initialValue,
+        // inte currentValue (vilket skulle vara det billigare priset för en bil av din bils
+        // NUVARANDE, mer slitna ålder).
+        cf[t] -= initialValue;
         resetMonths.push(t);
         age = 0;
       } else {
@@ -67,6 +71,7 @@ export function simulateOnePath(initialValue, months, yearlyRates, riskParams, a
 
   return { cashflow: cf, resetMonths, numEvents, numTotalLosses };
 }
+
 
 /**
  * Kör Monte Carlo-simulering med N oberoende livshistorier.

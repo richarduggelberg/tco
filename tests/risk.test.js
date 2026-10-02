@@ -58,6 +58,23 @@ test("simulateOnePath records a total loss when repair cost always exceeds the v
   assert.equal(result.resetMonths.length, result.numTotalLosses);
 });
 
+test("simulateOnePath charges the full original purchase price (not the depreciated current value) for a total-loss replacement, since the replacement is an equivalent car of the same vintage as the original purchase", () => {
+  const rng = () => 0.0001; // guarantees an event every month
+  const initialValue = 300000;
+  const result = simulateOnePath(initialValue, 24, [0.5, 0.5], {
+    weibullShape: 2.5,
+    weibullScaleMonths: 180,
+    repairCostMedian: 1_000_000, // always a total loss
+    repairCostSigma: 0.1,
+    totalLossThreshold: 0.5,
+    reliabilityFactor: 1.0,
+  }, 0, 1, rng);
+  assert.ok(result.numTotalLosses > 0);
+  for (const t of result.resetMonths) {
+    assert.ok(Math.abs(result.cashflow[t] + initialValue) < 1e-6, `total-loss cost at month ${t} should equal -initialValue, got ${result.cashflow[t]}`);
+  }
+});
+
 test("simulateOnePath with a used car starts hazard at a higher calendar age immediately", () => {
   const riskParams = {
     weibullShape: 2.5,
