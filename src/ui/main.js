@@ -116,10 +116,10 @@ function readInputs() {
   const holdingYears = Number(document.getElementById("holdingYears").value);
   const months = Math.round(holdingYears * 12);
 
-  assumptions.annualMileageKm = Number(document.getElementById("annualMileage").value);
+  assumptions.annualMileageKm = Number(document.getElementById("annualMileage").value) * 10;
   assumptions.discountRateAnnual = Number(document.getElementById("discountRate").value) / 100;
   assumptions.ageAtPurchaseYears = Number(document.getElementById("ageAtPurchase").value);
-  assumptions.vehicleAge.baselineAnnualMileageKm = Number(document.getElementById("baselineAnnualMileage").value);
+  assumptions.vehicleAge.baselineAnnualMileageKm = Number(document.getElementById("baselineAnnualMileage").value) * 10;
   assumptions.vehicleAge.mileageWeight = Number(document.getElementById("mileageWeight").value) / 100;
 
   assumptions.running.fuelType = fuelTypeSelect.value;
