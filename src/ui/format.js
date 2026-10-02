@@ -21,6 +21,7 @@ export const categoryLabels = {
   energy: "Bränsle/el",
   tax: "Fordonsskatt",
   insurance: "Försäkring",
-  service: "Service, däck, besiktning",
+  service: "Service, besiktning",
+  tires: "Däck (vinter/sommar)",
   residual: "Restvärde (avgår)",
 };

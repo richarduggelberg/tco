@@ -5,6 +5,7 @@ export const defaultAssumptions = {
   discountRateAnnual: 0.05, // Alternativkostnad för kapital, används för att nuvärdesberäkna ALLA finansieringsmetoder lika
   holdingPeriodYears: 5,
   annualMileageKm: 1500 * 10, // ~15 000 mil/år i km (15000)
+  ageAtPurchaseYears: 0, // Bilens kalenderålder (sedan tillverkning) vid köpet - 0 = nyköpt
 
   // Värdeminskning (årlig, appliceras stegvis - år 1 störst, avtar sedan)
   depreciation: {
@@ -31,18 +32,38 @@ export const defaultAssumptions = {
       monthlyFee: 4500, // Schablon - ersätt med en verklig privatleasingoffert
       firstPaymentExtra: 0, // "Förhöjd leasingavgift" vid tecknande, om tillämpligt
       taxAndServiceIncluded: true, // Vanligt i privatleasingerbjudanden
+      winterTiresIncluded: false, // Vissa leasingavtal inkluderar vinterdäck/hjulårsförvaring
     },
   },
 
   // Drift
   running: {
-    insuranceMonthly: 500, // Schablon - halvförsäkring, justerbar
-    serviceMonthly: 400, // Periodiserad service/besiktning/däck
+    serviceMonthly: 400, // Periodiserad service/besiktning
     fuelPricePerLiter: 17.5, // SEK/liter, bensin/diesel-snitt
     consumptionLPer10km: 0.6, // L/mil → 6.0 L/100km
     electricityPricePerKwh: 1.8, // SEK/kWh, fallback om live-data inte går att hämta
     consumptionKwhPer10km: 1.8, // kWh/mil
     fuelType: "bensin", // "bensin" | "diesel" | "el"
+  },
+
+  // Försäkring: växlar automatiskt mellan halv- och helförsäkring utifrån bilens kalenderålder.
+  // Vanligt mönster i Sverige: nya bilar har ofta en vagnskadegaranti (~3 år) från
+  // tillverkaren som täcker motsvarande vagnskadeförsäkring, så halvförsäkring räcker.
+  // Därefter behövs helförsäkring för samma skydd, tills bilens värde blivit så lågt att
+  // det inte längre lönar sig - då återgår man till halvförsäkring.
+  insurance: {
+    halvMonthly: 400,
+    helMonthly: 650,
+    helStartYears: 3, // Kalenderålder då vagnskadegarantin normalt löper ut
+    helEndYears: 8, // Kalenderålder då helförsäkring inte längre lönar sig
+  },
+
+  // Däck: återkommande klumpkostnad för byte av däckuppsättning (samma kostnadsantagande
+  // används för både vinter- och sommardäck, men med separata bytesintervall).
+  tires: {
+    setCost: 6000,
+    winterIntervalYears: 4,
+    summerIntervalYears: 5,
   },
 
   // Fordonsskatt (mycket förenklad - verklig bonus-malus beror på CO2/vikt/drivmedel)

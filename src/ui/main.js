@@ -51,14 +51,21 @@ function readInputs() {
 
   assumptions.annualMileageKm = Number(document.getElementById("annualMileage").value);
   assumptions.discountRateAnnual = Number(document.getElementById("discountRate").value) / 100;
+  assumptions.ageAtPurchaseYears = Number(document.getElementById("ageAtPurchase").value);
 
   assumptions.running.fuelType = fuelTypeSelect.value;
   if (fuelTypeSelect.value === "el" && liveElectricityPrice !== null) {
     assumptions.running.electricityPricePerKwh = liveElectricityPrice;
   }
-  assumptions.running.insuranceMonthly = Number(document.getElementById("insuranceMonthly").value);
+  assumptions.insurance.halvMonthly = Number(document.getElementById("insuranceHalv").value);
+  assumptions.insurance.helMonthly = Number(document.getElementById("insuranceHel").value);
+  assumptions.insurance.helStartYears = Number(document.getElementById("insuranceHelStart").value);
+  assumptions.insurance.helEndYears = Number(document.getElementById("insuranceHelEnd").value);
   assumptions.running.serviceMonthly = Number(document.getElementById("serviceMonthly").value);
   assumptions.tax.annualAmount = Number(document.getElementById("taxAnnual").value);
+  assumptions.tires.setCost = Number(document.getElementById("tireSetCost").value);
+  assumptions.tires.winterIntervalYears = Number(document.getElementById("winterTireInterval").value);
+  assumptions.tires.summerIntervalYears = Number(document.getElementById("summerTireInterval").value);
 
   const financingMethod = financingMethodSelect.value;
   assumptions.financing.billan.downPaymentRatio = Number(document.getElementById("billanDownPayment").value) / 100;
@@ -70,6 +77,7 @@ function readInputs() {
   assumptions.financing.leasing.monthlyFee = Number(document.getElementById("leasingFee").value);
   assumptions.financing.leasing.firstPaymentExtra = Number(document.getElementById("leasingFirstPayment").value);
   assumptions.financing.leasing.taxAndServiceIncluded = document.getElementById("leasingIncluded").value === "true";
+  assumptions.financing.leasing.winterTiresIncluded = document.getElementById("leasingWinterTires").value === "true";
 
   assumptions.risk.enabled = document.getElementById("riskEnabled").value === "true";
   assumptions.risk.weibullScaleMonths = Number(document.getElementById("expectedLifeYears").value) * 12;

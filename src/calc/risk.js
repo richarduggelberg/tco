@@ -27,25 +27,29 @@ export function sampleRepairCost(median, sigma, rng) {
 
 /**
  * Simulerar en enskild "livshistoria" för haveri/reparationer över innehavsperioden.
+ * Haverisannolikheten baseras på bilens KALENDERålder (sedan tillverkning), inte tid sedan
+ * köpet - en begagnad bil börjar alltså redan högre upp på hazard-kurvan.
  * Vid ett ekonomiskt totalhaveri (reparationskostnad > tröskel * bilens aktuella värde)
- * antas en likvärdig bil köpas in till dess marknadsvärde, och åldern nollställs.
+ * antas en likvärdig bil (samma kalenderålder som vid ursprungsköpet) köpas in igen.
+ * @param {number} ageAtPurchaseMonths - Bilens kalenderålder vid köptillfället
  * @returns {{cashflow: number[], resetMonths: number[], numEvents: number, numTotalLosses: number}}
  */
-export function simulateOnePath(initialValue, months, yearlyRates, riskParams, rng = Math.random) {
+export function simulateOnePath(initialValue, months, yearlyRates, riskParams, ageAtPurchaseMonths = 0, rng = Math.random) {
   const cf = new Array(months + 1).fill(0);
   const resetMonths = [];
-  let age = 0;
+  let age = 0; // Månader sedan senaste köp/återköp (lokal ålder)
   let numEvents = 0;
   let numTotalLosses = 0;
 
   for (let t = 1; t <= months; t++) {
     age += 1;
-    const hazard = weibullHazard(age, riskParams.weibullShape, riskParams.weibullScaleMonths) * riskParams.reliabilityFactor;
+    const calendarAgeMonths = ageAtPurchaseMonths + age;
+    const hazard = weibullHazard(calendarAgeMonths, riskParams.weibullShape, riskParams.weibullScaleMonths) * riskParams.reliabilityFactor;
     const p = Math.min(Math.max(hazard, 0), 1);
     if (rng() < p) {
       numEvents++;
       const repairCost = sampleRepairCost(riskParams.repairCostMedian, riskParams.repairCostSigma, rng);
-      const currentValue = valueAtAge(initialValue, age, yearlyRates);
+      const currentValue = valueAtAge(initialValue, age, yearlyRates, ageAtPurchaseMonths);
       if (repairCost > riskParams.totalLossThreshold * currentValue) {
         numTotalLosses++;
         cf[t] -= currentValue; // Köp av likvärdig bil till dåvarande marknadsvärde
@@ -64,10 +68,10 @@ export function simulateOnePath(initialValue, months, yearlyRates, riskParams, r
  * Kör Monte Carlo-simulering med N oberoende livshistorier.
  * @returns {Array<{cashflow: number[], resetMonths: number[], numEvents: number, numTotalLosses: number}>}
  */
-export function simulateRiskPaths(initialValue, months, yearlyRates, riskParams, rng = Math.random) {
+export function simulateRiskPaths(initialValue, months, yearlyRates, riskParams, ageAtPurchaseMonths = 0, rng = Math.random) {
   const paths = [];
   for (let i = 0; i < riskParams.numSimulations; i++) {
-    paths.push(simulateOnePath(initialValue, months, yearlyRates, riskParams, rng));
+    paths.push(simulateOnePath(initialValue, months, yearlyRates, riskParams, ageAtPurchaseMonths, rng));
   }
   return paths;
 }

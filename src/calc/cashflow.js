@@ -5,6 +5,31 @@ export function buildConstantSeries(months, monthlyValue) {
   return series;
 }
 
+/**
+ * Bygger en kassaflödesserie där kostnaden för varje månad 1..months beräknas av en
+ * funktion av månadsindex (t.ex. försäkringspremie som beror på bilens ålder den månaden).
+ */
+export function buildSeriesFromFunction(months, costFn) {
+  const series = new Array(months + 1).fill(0);
+  for (let t = 1; t <= months; t++) {
+    series[t] = -costFn(t);
+  }
+  return series;
+}
+
+/**
+ * Bygger en kassaflödesserie med en återkommande klumpsummekostnad var `intervalMonths`:e
+ * månad (t.ex. byte av däckuppsättning). Ingen kostnad om intervallet eller kostnaden är 0.
+ */
+export function buildPeriodicCostSeries(months, intervalMonths, cost) {
+  const series = new Array(months + 1).fill(0);
+  if (!intervalMonths || intervalMonths <= 0 || !cost) return series;
+  for (let t = intervalMonths; t <= months; t += intervalMonths) {
+    series[t] -= cost;
+  }
+  return series;
+}
+
 /** Bygger en kassaflödesserie där restvärdet betalas ut (positivt) vid periodens sista månad. */
 export function buildResidualSeries(months, residualValue) {
   const series = new Array(months + 1).fill(0);

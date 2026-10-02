@@ -37,7 +37,7 @@ test("simulateOnePath never triggers an event when rng always returns ~1 (never 
     repairCostSigma: 0.8,
     totalLossThreshold: 0.5,
     reliabilityFactor: 1.0,
-  }, rng);
+  }, 0, rng);
   assert.equal(result.numEvents, 0);
   assert.equal(result.numTotalLosses, 0);
   assert.ok(result.cashflow.every((v) => v === 0));
@@ -52,8 +52,22 @@ test("simulateOnePath records a total loss when repair cost always exceeds the v
     repairCostSigma: 0.1,
     totalLossThreshold: 0.5,
     reliabilityFactor: 1.0,
-  }, rng);
+  }, 0, rng);
   assert.ok(result.numEvents > 0);
   assert.ok(result.numTotalLosses > 0);
   assert.equal(result.resetMonths.length, result.numTotalLosses);
+});
+
+test("simulateOnePath with a used car starts hazard at a higher calendar age immediately", () => {
+  const riskParams = {
+    weibullShape: 2.5,
+    weibullScaleMonths: 180,
+    repairCostMedian: 25000,
+    repairCostSigma: 0.8,
+    totalLossThreshold: 0.5,
+    reliabilityFactor: 1.0,
+  };
+  const hazardNew = weibullHazard(1, riskParams.weibullShape, riskParams.weibullScaleMonths);
+  const hazardUsed = weibullHazard(121, riskParams.weibullShape, riskParams.weibullScaleMonths);
+  assert.ok(hazardUsed > hazardNew, "a 10-year-old car should have a materially higher hazard at month 1 of ownership than a brand new car");
 });

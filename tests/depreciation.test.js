@@ -38,3 +38,30 @@ test("buildValueSeries resets age at specified reset months", () => {
   // At month 24 (12 months after reset), should equal valueAtAge(100000, 12, rates)
   assert.ok(Math.abs(series[24] - valueAtAge(100000, 12, rates)) < 1e-6);
 });
+
+test("valueAtAge with ageAtReferenceMonths=0 is unchanged from the simple case", () => {
+  const rates = [0.2, 0.15, 0.12, 0.1];
+  assert.equal(valueAtAge(100000, 18, rates, 0), valueAtAge(100000, 18, rates));
+});
+
+test("valueAtAge for a used car applies the flatter later-year depreciation curve from month 0", () => {
+  const rates = [0.2, 0.15, 0.12, 0.1, 0.08];
+  // A car bought at calendar age 24 months should depreciate at year-3 rates immediately,
+  // not restart at the steep year-1 rate.
+  const usedCarValue = valueAtAge(100000, 12, rates, 24);
+  // Equivalent to: value of a new car at month 36 relative to its value at month 24
+  const newCarAt24 = valueAtAge(100000, 24, rates);
+  const newCarAt36 = valueAtAge(100000, 36, rates);
+  const expectedRatio = newCarAt36 / newCarAt24;
+  assert.ok(Math.abs(usedCarValue / 100000 - expectedRatio) < 1e-9);
+});
+
+test("buildValueSeries threads ageAtPurchaseMonths through resets (rebuying the same age car)", () => {
+  const rates = [0.2, 0.15, 0.12, 0.1];
+  const ageAtPurchaseMonths = 24;
+  const series = buildValueSeries(100000, 24, rates, [12], ageAtPurchaseMonths);
+  // After a reset at month 12, the car's value resets to the value of a car bought used
+  // at the same original calendar age (not a brand new car).
+  assert.ok(Math.abs(series[12] - valueAtAge(100000, 0, rates, ageAtPurchaseMonths)) < 1e-6);
+  assert.ok(Math.abs(series[24] - valueAtAge(100000, 12, rates, ageAtPurchaseMonths)) < 1e-6);
+});

@@ -21,6 +21,10 @@
           <input type="number" id="price" value="300000" min="1000" step="1000" required>
         </div>
         <div>
+          <label for="ageAtPurchase">Ålder vid köp (år)</label>
+          <input type="number" id="ageAtPurchase" value="0" min="0" max="30" step="0.5">
+        </div>
+        <div>
           <label for="holdingYears">Innehavstid (år)</label>
           <input type="number" id="holdingYears" value="5" min="1" max="20" step="1" required>
         </div>
@@ -118,6 +122,13 @@
               <option value="false">Nej</option>
             </select>
           </div>
+          <div>
+            <label for="leasingWinterTires">Vinterdäck ingår i avgiften</label>
+            <select id="leasingWinterTires">
+              <option value="false" selected>Nej</option>
+              <option value="true">Ja</option>
+            </select>
+          </div>
         </div>
         <p class="note">Fyll i en verklig leasingofferta (t.ex. från en återförsäljare eller en jämförelsesajt). Vid leasing äger du aldrig bilen - restvärde och haveririsk bärs av leasingbolaget och visas därför inte i uppdelningen nedan.</p>
       </fieldset>
@@ -125,11 +136,15 @@
       <h2>Löpande kostnader</h2>
       <div class="grid">
         <div>
-          <label for="insuranceMonthly">Försäkring (kr/mån)</label>
-          <input type="number" id="insuranceMonthly" value="500" min="0" step="50">
+          <label for="insuranceHalv">Halvförsäkring (kr/mån)</label>
+          <input type="number" id="insuranceHalv" value="400" min="0" step="50">
         </div>
         <div>
-          <label for="serviceMonthly">Service, däck, besiktning (kr/mån)</label>
+          <label for="insuranceHel">Helförsäkring (kr/mån)</label>
+          <input type="number" id="insuranceHel" value="650" min="0" step="50">
+        </div>
+        <div>
+          <label for="serviceMonthly">Service, besiktning (kr/mån)</label>
           <input type="number" id="serviceMonthly" value="400" min="0" step="50">
         </div>
         <div>
@@ -137,6 +152,9 @@
           <input type="number" id="taxAnnual" value="2000" min="0" step="100">
         </div>
       </div>
+      <p class="note">Försäkringen växlar automatiskt mellan halv- och helförsäkring utifrån bilens
+        kalenderålder (se gränser under Avancerat) - vanligtvis halv de första åren (täcks delvis av
+        nybilsgaranti/vagnskadegaranti), hel däremellan, och halv igen när bilen blivit lågvärderad.</p>
 
       <details>
         <summary>Avancerat: haveririsk &amp; värdeminskning</summary>
@@ -164,10 +182,33 @@
             <label for="reliabilityFactor">Tillförlitlighetsfaktor (1 = snitt)</label>
             <input type="number" id="reliabilityFactor" value="1.0" min="0.3" max="3" step="0.1">
           </div>
+          <div>
+            <label for="insuranceHelStart">Helförsäkring från ålder (år)</label>
+            <input type="number" id="insuranceHelStart" value="3" min="0" max="20" step="0.5">
+          </div>
+          <div>
+            <label for="insuranceHelEnd">Tillbaka till halvförsäkring från ålder (år)</label>
+            <input type="number" id="insuranceHelEnd" value="8" min="0" max="25" step="0.5">
+          </div>
+          <div>
+            <label for="tireSetCost">Kostnad per däckuppsättning (kr)</label>
+            <input type="number" id="tireSetCost" value="6000" min="0" step="500">
+          </div>
+          <div>
+            <label for="winterTireInterval">År mellan vinterdäcksbyten</label>
+            <input type="number" id="winterTireInterval" value="4" min="1" max="15" step="1">
+          </div>
+          <div>
+            <label for="summerTireInterval">År mellan sommardäcksbyten</label>
+            <input type="number" id="summerTireInterval" value="5" min="1" max="15" step="1">
+          </div>
         </div>
         <p class="note">Haveririsken beräknas med en Monte Carlo-simulering (ökande haverisannolikhet med
-          ålder). Modellen antar att ett ekonomiskt totalhaveri innebär att en likvärdig bil köps in igen till
-          dess dåvarande marknadsvärde, vilket nollställer åldern i simuleringen för resten av innehavsperioden.</p>
+          bilens kalenderålder sedan tillverkning - en begagnad bil börjar alltså redan högre upp på
+          riskkurvan). Modellen antar att ett ekonomiskt totalhaveri innebär att en likvärdig bil (samma
+          kalenderålder som vid det ursprungliga köpet) köps in igen, vilket återställer både värde och
+          riskklocka till utgångsläget för resten av innehavsperioden. Däckkostnaden gäller inte vinterdäck
+          om "Vinterdäck ingår i avgiften" är ikryssat för leasing.</p>
       </details>
 
       <button type="submit">Beräkna</button>
