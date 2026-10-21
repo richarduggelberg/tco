@@ -278,3 +278,50 @@ test("computeLifetimeMonthlyCosts: for a cash purchase, the curve is continuous 
     assert.ok(Math.abs(shortOwnership.monthlyCost[i] - longOwnership.monthlyCost[i]) < 1e-6, `monthlyCost should match at index ${i} regardless of ownership duration`);
   }
 });
+
+test("computeTco reports a residual value at end of ownership and the value lost during ownership", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = false;
+  const price = 300000;
+  const result = computeTco({ price, months: 60, financingMethod: "kontant", assumptions });
+  assert.ok(result.residualValue > 0 && result.residualValue < price, "residual value should be a fraction of the purchase price");
+  assert.ok(Math.abs(result.valueLost - (price - result.residualValue)) < 1e-6, "value lost should equal purchase price minus residual value");
+  assert.ok(result.valueLost > 0);
+});
+
+test("computeTco: a low-mileage car retains a higher residual value than a high-mileage one over the same period", () => {
+  const lowMileage = cloneAssumptions();
+  lowMileage.risk.enabled = false;
+  lowMileage.annualMileageKm = 5000;
+  const resultLow = computeTco({ price: 300000, months: 60, financingMethod: "kontant", assumptions: lowMileage });
+
+  const highMileage = cloneAssumptions();
+  highMileage.risk.enabled = false;
+  highMileage.annualMileageKm = 40000;
+  const resultHigh = computeTco({ price: 300000, months: 60, financingMethod: "kontant", assumptions: highMileage });
+
+  assert.ok(resultLow.residualValue > resultHigh.residualValue, "a car driven less should be worth more at the end");
+  assert.ok(resultLow.valueLost < resultHigh.valueLost, "a car driven less should lose less value");
+});
+
+test("computeTco: a used car retains more of its purchase price over the next period than a new car (flatter depreciation)", () => {
+  const newCar = cloneAssumptions();
+  newCar.risk.enabled = false;
+  newCar.ageAtPurchaseYears = 0;
+  const resultNew = computeTco({ price: 300000, months: 24, financingMethod: "kontant", assumptions: newCar });
+
+  const usedCar = cloneAssumptions();
+  usedCar.risk.enabled = false;
+  usedCar.ageAtPurchaseYears = 5;
+  const resultUsed = computeTco({ price: 300000, months: 24, financingMethod: "kontant", assumptions: usedCar });
+
+  assert.ok(resultUsed.valueLost < resultNew.valueLost, "a used car should lose less value over the same period");
+});
+
+test("computeTco with leasing reports no residual value or value lost (the user never owns the car)", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = false;
+  const result = computeTco({ price: 300000, months: 36, financingMethod: "leasing", assumptions });
+  assert.equal(result.residualValue, null);
+  assert.equal(result.valueLost, null);
+});

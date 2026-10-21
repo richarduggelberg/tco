@@ -16,6 +16,7 @@ const impliedNewPriceNote = document.getElementById("implied-newprice-note");
 const resultsSection = document.getElementById("results");
 const resultMonthlyEl = document.getElementById("result-monthly");
 const resultIntervalEl = document.getElementById("result-interval");
+const resultResidualEl = document.getElementById("result-residual");
 const breakdownBody = document.getElementById("breakdown-body");
 const chartCanvas = document.getElementById("breakdown-chart");
 const lifetimeChartCanvas = document.getElementById("lifetime-chart");
@@ -199,6 +200,16 @@ function renderResults(result, financingMethod) {
     resultIntervalEl.textContent = "Vid leasing bärs värdeminsknings- och haveririsken av leasingbolaget.";
   } else {
     resultIntervalEl.textContent = "Haveririsk är avstängd i beräkningen.";
+  }
+
+  // Restvärde och värdeminskning är bara relevant när man äger bilen själv (ej leasing).
+  if (result.residualValue != null) {
+    resultResidualEl.textContent =
+      `Restvärde efter ägandetiden: ${formatCurrency(result.residualValue)} ` +
+      `· Värdeminskning under ägandetiden: ${formatCurrency(result.valueLost)}`;
+    resultResidualEl.classList.remove("hidden");
+  } else {
+    resultResidualEl.classList.add("hidden");
   }
 
   breakdownBody.innerHTML = "";

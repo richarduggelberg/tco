@@ -69,7 +69,8 @@ function taxMonthlyCost(calendarAgeYears, tax) {
  * haveririsk om assumptions.risk.enabled är true.
  *
  * @param {object} input - { price, months, financingMethod, assumptions }
- * @returns {object} Resultat med kategoriuppdelad deterministisk månadskostnad och ev. riskstatistik
+ * @returns {object} Resultat med kategoriuppdelad deterministisk månadskostnad, ev. riskstatistik
+ *   samt (för ägda bilar) restvärde vid ägandeperiodens slut och förlorat värde sedan köpet
  */
 export function computeTco({ price, months, financingMethod, assumptions }) {
   const monthlyDiscountRate = annualToMonthlyRate(assumptions.discountRateAnnual);
@@ -106,6 +107,10 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
 
   const loan = isLeasing ? null : loanSeries(financingMethod, price, months, assumptions.financing);
   const categorySeries = { energy, tax, insurance, service, tires };
+  // Restvärde och värdeminskning är bara meningsfulla när man äger bilen själv - vid leasing
+  // bär leasingbolaget värdeminskningen och användaren har ingen bil att sälja vid periodens slut.
+  let residualValue = null;
+  let valueLost = null;
   if (isLeasing) {
     categorySeries.leasingavgift = financing;
   } else {
@@ -113,6 +118,10 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
     // räknas på eget kapital (bilens värde minus kvarvarande låneskuld), så den minskar
     // naturligt i takt med att bilen tappar värde och/eller lånet amorteras.
     const baseValueSeries = buildValueSeries(price, months, yearlyRates, [], ageAtPurchaseMonths, ageRateMultiplier);
+    // Bilens marknadsvärde vid ägandeperiodens slut (det du kan sälja den för) och hur mycket
+    // värde som gått förlorat sedan köpet (samma kurva som värdeminskningsposten bygger på).
+    residualValue = baseValueSeries[months];
+    valueLost = price - residualValue;
     const equity = baseValueSeries.map((value, t) => value - loan.balance[t]);
 
     const depreciation = new Array(months + 1).fill(0);
@@ -174,7 +183,7 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
     };
   }
 
-  return { categoryMonthly, deterministicTotal, risk };
+  return { categoryMonthly, deterministicTotal, risk, residualValue, valueLost };
 }
 
 /**

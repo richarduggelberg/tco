@@ -139,6 +139,13 @@ details summary {
   margin-top: 0.3rem;
 }
 
+.residual-note {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin-top: 0.4rem;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
