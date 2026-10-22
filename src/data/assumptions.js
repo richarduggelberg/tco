@@ -12,7 +12,7 @@ export const defaultAssumptions = {
   // värdeminskning/haveririsk är kalibrerade mot baselineAnnualMileageKm, som också antas
   // gälla ägandet INNAN köpet (se ageAtPurchaseYears) eftersom körsträckan dessförinnan är okänd.
   vehicleAge: {
-    baselineAnnualMileageKm: 15000,
+    baselineAnnualMileageKm: 11000, // ~1100 mil/år (svenskt snitt) - antas gälla även ägandet innan köpet
     mileageWeight: 0.7, // Andel (0-1) av åldringseffekten som beror på körsträcka snarare än kalendertid
   },
 
