@@ -276,13 +276,15 @@ function findSurvivalAgeYears(survival, targetProbability) {
 
 /**
  * Bygger en nominell (ej nuvärdesberäknad) månadskostnadskurva över bilens HELA liv
- * (sedan tillverkning), för att visualisera hur kostnaden varierar med bilens ålder -
- * oavsett vem som äger den. Drift-/åldersrelaterade poster (skatt, försäkring, bränsle/el,
- * service, däck, värdeminskning) visas genom hela kurvan, medan finansieringsrelaterade
- * poster (kapitalkostnad/låneränta/leasingavgift) bara läggs på under den egna
- * ägandeperioden (markerad med de två brytpunkterna som returneras).
+ * (sedan tillverkning), uppdelad i sina beståndsdelar (components) så att den kan staplas
+ * i grafen. Drift-/åldersrelaterade poster (bränsle/el, skatt, försäkring, service, däck,
+ * värdeminskning, haveririsk) visas genom hela kurvan. Under den egna ägandeperioden (
+ * markerad med de två brytpunkterna som returneras) används den valda finansieringsmetoden;
+ * utanför den antas samma finansieringsmetod (utom leasing, som bara finns under
+ * ägandetiden), så kapitalkostnaden speglar vald finansiering även för en hypotetisk ägare
+ * vid den åldern.
  * @param {object} input - { price, months, financingMethod, assumptions }
- * @returns {{ ageYears: number[], monthlyCost: number[], riskMonthly: number[], purchaseAgeYears: number, endOfOwnershipAgeYears: number }}
+ * @returns {{ ageYears: number[], monthlyCost: number[], riskMonthly: number[], components: object, purchaseAgeYears: number, endOfOwnershipAgeYears: number, survivalMilestones: object[] }}
  */
 export function computeLifetimeMonthlyCosts({ price, months, financingMethod, assumptions }) {
   const yearlyRates = assumptions.depreciation.yearlyRates;
@@ -322,50 +324,85 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
 
   const loan = isLeasing ? null : loanSeries(financingMethod, price, months, assumptions.financing);
   const leasingCf = isLeasing ? financingCashflow(financingMethod, price, months, assumptions.financing) : null;
+  const summerTiresMonthly = summerIntervalMonths > 0 ? assumptions.tires.setCost / summerIntervalMonths : 0;
 
+  // Kapitalkostnad utanför din ägandeperiod: samma finansieringsmetod som valts (utom leasing,
+  // som bara finns under ägandetiden). Modelleras som en "färsk" finansiering av bilen vid den
+  // åldern: kontant -> bara alternativkostnad; billån/bolån -> alternativkostnad på
+  // kontantinsatsen plus ränta på den finansierade delen.
+  const financingCapitalRate = (() => {
+    if (financingMethod === "kontant" || isLeasing) return monthlyDiscountRate;
+    const params = assumptions.financing[financingMethod];
+    const downPaymentRatio = params.downPaymentRatio ?? 1;
+    return (
+      monthlyDiscountRate * downPaymentRatio +
+      annualToMonthlyRate(params.interestRateAnnual) * (1 - downPaymentRatio)
+    );
+  })();
+
+  const components = {
+    energy: [],
+    tax: [],
+    insurance: [],
+    service: [],
+    tires: [],
+    depreciation: [],
+    capitalCost: [],
+    risk: [],
+    leasing: [],
+  };
   const ageYears = [];
   const monthlyCost = [];
   const riskMonthly = [];
   for (let t = 1; t <= totalLifeMonths; t++) {
     const calendarAgeYears = t / 12;
-    const depreciationCost = lifeValue[t - 1] - lifeValue[t];
-    // Generisk baslinje för kapitalkostnad (som om bilen vore kontantköpt) - gäller
-    // vem som än äger bilen just nu, så kurvan blir kontinuerlig även utanför din egen
-    // ägandeperiod, precis som värdeminskning/skatt/försäkring redan är.
-    const capitalCostBaseline = monthlyDiscountRate * lifeValue[t - 1];
-    let cost =
-      energyMonthly +
-      taxMonthlyCost(calendarAgeYears, assumptions.tax) +
-      insuranceMonthlyCost(calendarAgeYears, assumptions.insurance) +
-      assumptions.running.serviceMonthly +
-      winterTiresMonthly +
-      (summerIntervalMonths > 0 ? assumptions.tires.setCost / summerIntervalMonths : 0) +
-      depreciationCost +
-      expectedRiskMonthly[t] +
-      capitalCostBaseline;
+    const valuePrev = lifeValue[t - 1];
+    const depreciationCost = valuePrev - lifeValue[t];
+    const capitalCostBaseline = monthlyDiscountRate * valuePrev;
+
+    let energyC = energyMonthly;
+    let taxC = taxMonthlyCost(calendarAgeYears, assumptions.tax);
+    let insuranceC = insuranceMonthlyCost(calendarAgeYears, assumptions.insurance);
+    let serviceC = assumptions.running.serviceMonthly;
+    let tiresC = winterTiresMonthly + summerTiresMonthly;
+    let depreciationC = depreciationCost;
+    let capitalC = capitalCostBaseline;
+    let riskC = expectedRiskMonthly[t];
+    let leasingC = 0;
 
     const monthsSincePurchase = t - ageAtPurchaseMonths;
     const ownedThisMonth = monthsSincePurchase >= 1 && monthsSincePurchase <= months;
     if (ownedThisMonth) {
       if (isLeasing) {
-        // Leasingavgiften bakar redan in värdeminskning, kapitalkostnad och haveririsk
-        // (leasingbolaget bär dem) - byt ut baslinjens tre poster mot avgiften, stapla inte.
-        cost +=
-          -leasingCf[monthsSincePurchase] -
-          depreciationCost -
-          expectedRiskMonthly[t] -
-          capitalCostBaseline -
-          (serviceBundled ? assumptions.running.serviceMonthly : 0) -
-          (winterTiresBundled ? winterTiresMonthly : 0);
+        // Leasingavgiften ersätter värdeminskning, kapitalkostnad och haveririsk (som
+        // leasingbolaget bär) samt ev. service/vinterdäck som ingår i avgiften.
+        if (serviceBundled) serviceC = 0;
+        if (winterTiresBundled) tiresC = summerTiresMonthly;
+        leasingC = -leasingCf[monthsSincePurchase];
+        depreciationC = 0;
+        capitalC = 0;
+        riskC = 0;
       } else {
-        const equityPrev = lifeValue[t - 1] - loan.balance[monthsSincePurchase - 1];
-        const actualCapitalCost = monthlyDiscountRate * equityPrev + loan.interest[monthsSincePurchase];
-        cost += actualCapitalCost - capitalCostBaseline;
+        const equityPrev = valuePrev - loan.balance[monthsSincePurchase - 1];
+        capitalC = monthlyDiscountRate * equityPrev + loan.interest[monthsSincePurchase];
       }
+    } else if (!isLeasing) {
+      // Utanför ägandeperioden: behåll vald finansiering istället för att falla tillbaka på kontant.
+      capitalC = financingCapitalRate * valuePrev;
     }
 
+    components.energy.push(energyC);
+    components.tax.push(taxC);
+    components.insurance.push(insuranceC);
+    components.service.push(serviceC);
+    components.tires.push(tiresC);
+    components.depreciation.push(depreciationC);
+    components.capitalCost.push(capitalC);
+    components.risk.push(riskC);
+    components.leasing.push(leasingC);
+
     ageYears.push(t / 12);
-    monthlyCost.push(cost);
+    monthlyCost.push(energyC + taxC + insuranceC + serviceC + tiresC + depreciationC + capitalC + riskC + leasingC);
     riskMonthly.push(expectedRiskMonthly[t]);
   }
 
@@ -373,6 +410,7 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
     ageYears,
     monthlyCost,
     riskMonthly,
+    components,
     purchaseAgeYears: ageAtPurchaseMonths / 12,
     endOfOwnershipAgeYears: (ageAtPurchaseMonths + months) / 12,
     survivalMilestones,

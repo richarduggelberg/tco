@@ -235,13 +235,27 @@ test("computeLifetimeMonthlyCosts marks purchase/end-of-ownership ages consisten
   assert.equal(result.endOfOwnershipAgeYears, 5);
 });
 
-test("computeLifetimeMonthlyCosts shows a higher monthly cost during ownership than right after selling (financing drops away)", () => {
+test("computeLifetimeMonthlyCosts keeps the chosen financing after selling (a billån owner still pays interest, unlike a cash owner)", () => {
   const assumptions = cloneAssumptions();
   assumptions.ageAtPurchaseYears = 0;
-  const result = computeLifetimeMonthlyCosts({ price: 300000, months: 36, financingMethod: "billan", assumptions });
-  const lastOwnedIdx = Math.round(result.endOfOwnershipAgeYears * 12) - 1;
-  const firstUnownedIdx = lastOwnedIdx + 1;
-  assert.ok(result.monthlyCost[lastOwnedIdx] > result.monthlyCost[firstUnownedIdx]);
+  const billan = computeLifetimeMonthlyCosts({ price: 300000, months: 36, financingMethod: "billan", assumptions });
+  const kontant = computeLifetimeMonthlyCosts({ price: 300000, months: 36, financingMethod: "kontant", assumptions });
+  const firstUnownedIdx = Math.round(billan.endOfOwnershipAgeYears * 12); // first month after selling
+  assert.ok(
+    billan.monthlyCost[firstUnownedIdx] > kontant.monthlyCost[firstUnownedIdx],
+    "after selling, the billån curve should stay above the cash curve because financing continues"
+  );
+});
+
+test("computeLifetimeMonthlyCosts component series sum to the total monthly cost, for every financing method", () => {
+  for (const method of ["kontant", "billan", "bolan", "leasing"]) {
+    const assumptions = cloneAssumptions();
+    const result = computeLifetimeMonthlyCosts({ price: 300000, months: 48, financingMethod: method, assumptions });
+    for (let i = 0; i < result.monthlyCost.length; i++) {
+      const sum = Object.values(result.components).reduce((acc, series) => acc + series[i], 0);
+      assert.ok(Math.abs(sum - result.monthlyCost[i]) < 1e-6, `${method}: components should sum to the total at index ${i}`);
+    }
+  }
 });
 
 test("computeLifetimeMonthlyCosts returns survival milestones (50/25/10/5/1%) in increasing age order, and the chart data reaches at least the 1% age", () => {

@@ -1,0 +1,19 @@
+Notes
+
+Lifetime chart (bottom graph), stacked components:
+- The curve is now a stacked area of its cost components (bränsle/el, skatt, försäkring,
+  service, däck, värdeminskning, kapitalkostnad, förväntad haveririsk, leasingavgift),
+  with the total as the bold line on top.
+- Outside the ownership window the capital cost reflects the chosen financing method
+  (except leasing, which only exists during ownership), instead of falling back to cash.
+
+Known caveats / not done:
+- Boundary step: for an amortizing billån there is a small upward step at the "Säljs"
+  line. Inside the ownership window the capital cost follows the actual (paid-down) loan,
+  while outside it assumes a fresh loan at the steady-state financing rate
+  (discountRate * kontantinsatsandel + låneränta * finansierad andel). Making it perfectly
+  smooth would mean applying that same rate across the whole life, which would also
+  slightly raise the in-window capital cost. Not done (left as the current behavior).
+- The stacked-area lifetime chart has NOT been visually verified in a browser. It uses the
+  standard Chart.js pattern (y.stacked: true + per-dataset stack + fill: true) and the
+  underlying data is covered by tests, but a quick manual look in a browser is recommended.

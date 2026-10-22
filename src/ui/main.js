@@ -262,10 +262,50 @@ const survivalMarkerColors = {
   0.01: "#93c5fd",
 };
 
+// Ordning och färger för komponenterna i den staplade livscykel-grafen (nedifrån och upp).
+const lifetimeComponentStyles = [
+  { key: "energy", label: categoryLabels.energy, color: "#93c5fd" },
+  { key: "tax", label: categoryLabels.tax, color: "#fcd34d" },
+  { key: "insurance", label: categoryLabels.insurance, color: "#c4b5fd" },
+  { key: "service", label: categoryLabels.service, color: "#6ee7b7" },
+  { key: "tires", label: categoryLabels.tires, color: "#cbd5e1" },
+  { key: "depreciation", label: categoryLabels.depreciation, color: "#f87171" },
+  { key: "capitalCost", label: categoryLabels.kapitalkostnad, color: "#38bdf8" },
+  { key: "risk", label: "Haveririsk (förväntad)", color: "#fb923c" },
+  { key: "leasing", label: categoryLabels.leasingavgift, color: "#a78bfa" },
+];
+
 function renderLifetimeChart(input) {
   const lifetime = computeLifetimeMonthlyCosts(input);
-  const points = lifetime.ageYears.map((y, i) => ({ x: y, y: Math.round(lifetime.monthlyCost[i]) }));
-  const riskPoints = lifetime.ageYears.map((y, i) => ({ x: y, y: Math.round(lifetime.riskMonthly[i]) }));
+  const totalPoints = lifetime.ageYears.map((y, i) => ({ x: y, y: Math.round(lifetime.monthlyCost[i]) }));
+
+  // En staplad area per kostnadspost; den översta kanten av stapeln utgör totalkostnaden.
+  const componentDatasets = lifetimeComponentStyles
+    .filter((style) => lifetime.components[style.key].some((v) => Math.abs(v) > 0.5))
+    .map((style) => ({
+      label: style.label,
+      data: lifetime.ageYears.map((y, i) => ({ x: y, y: Math.round(lifetime.components[style.key][i]) })),
+      borderColor: style.color,
+      backgroundColor: style.color,
+      fill: true,
+      pointRadius: 0,
+      borderWidth: 1,
+      tension: 0.1,
+      stack: "cost",
+    }));
+
+  const totalDataset = {
+    label: "Total månadskostnad",
+    data: totalPoints,
+    borderColor: "#0a6847",
+    backgroundColor: "#0a6847",
+    fill: false,
+    pointRadius: 0,
+    borderWidth: 2,
+    tension: 0.1,
+    stack: "total",
+    order: -1,
+  };
 
   const survivalMarkers = lifetime.survivalMilestones.map((m) => ({
     value: m.ageYears,
@@ -276,30 +316,9 @@ function renderLifetimeChart(input) {
   if (lifetimeChartInstance) lifetimeChartInstance.destroy();
   lifetimeChartInstance = new Chart(lifetimeChartCanvas, {
     type: "line",
-    data: {
-      datasets: [
-        {
-          label: "Kr/månad (totalt, inkl. förväntad risk)",
-          data: points,
-          borderColor: "#0a6847",
-          backgroundColor: "#0a6847",
-          pointRadius: 0,
-          borderWidth: 2,
-          tension: 0.1,
-        },
-        {
-          label: "Varav förväntad risk (haveri/totalhaveri)",
-          data: riskPoints,
-          borderColor: "#c2410c",
-          backgroundColor: "#c2410c",
-          pointRadius: 0,
-          borderWidth: 2,
-          borderDash: [4, 3],
-          tension: 0.1,
-        },
-      ],
-    },
+    data: { datasets: [totalDataset, ...componentDatasets] },
     options: {
+      interaction: { mode: "index", intersect: false },
       plugins: {
         legend: { display: true, position: "bottom" },
         verticalMarkers: {
@@ -312,7 +331,7 @@ function renderLifetimeChart(input) {
       },
       scales: {
         x: { type: "linear", title: { display: true, text: "Bilens ålder (år)" } },
-        y: { beginAtZero: true, title: { display: true, text: "Kr/månad" } },
+        y: { beginAtZero: true, stacked: true, title: { display: true, text: "Kr/månad" } },
       },
     },
     plugins: [verticalMarkerPlugin],
