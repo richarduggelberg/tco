@@ -258,16 +258,28 @@ test("computeLifetimeMonthlyCosts component series sum to the total monthly cost
   }
 });
 
-test("computeLifetimeMonthlyCosts returns survival milestones (50/25/10/5/1%) in increasing age order, and the chart data reaches at least the 1% age", () => {
+test("computeLifetimeMonthlyCosts spans up to double the assumed lifespan, and only shows survival milestones within that range", () => {
   const assumptions = cloneAssumptions();
   const result = computeLifetimeMonthlyCosts({ price: 300000, months: 60, financingMethod: "kontant", assumptions });
-  const probabilities = result.survivalMilestones.map((m) => m.probability);
-  assert.deepEqual(probabilities, [0.5, 0.25, 0.1, 0.05, 0.01]);
+  const expectedEndMonths = 2 * assumptions.risk.weibullScaleMonths;
+  assert.equal(result.ageYears.length, expectedEndMonths);
+  assert.ok(Math.abs(result.ageYears[result.ageYears.length - 1] - expectedEndMonths / 12) < 1e-9);
+  // Survivkmilstolpar som ryms inom det visade intervallet ska komma i fallande sannolikhet /
+  // stigande ålder, och ingen får placeras bortom grafens slut.
   for (let i = 1; i < result.survivalMilestones.length; i++) {
+    assert.ok(result.survivalMilestones[i].probability < result.survivalMilestones[i - 1].probability);
     assert.ok(result.survivalMilestones[i].ageYears > result.survivalMilestones[i - 1].ageYears, "later (lower-probability) milestones should occur at a higher age");
   }
-  const onePercentMilestone = result.survivalMilestones.find((m) => m.probability === 0.01);
-  assert.ok(result.ageYears[result.ageYears.length - 1] >= onePercentMilestone.ageYears, "the chart's age range should extend at least to the 1% survival age");
+  for (const m of result.survivalMilestones) {
+    assert.ok(m.ageYears <= expectedEndMonths / 12 + 1e-9, "no milestone should be placed beyond the chart's end");
+  }
+});
+
+test("computeLifetimeMonthlyCosts extends past double the lifespan when the ownership window is longer", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.weibullScaleMonths = 60; // 5 år -> 2x = 10 år
+  const result = computeLifetimeMonthlyCosts({ price: 300000, months: 180, financingMethod: "kontant", assumptions }); // 15 års ägande
+  assert.ok(result.ageYears[result.ageYears.length - 1] >= 15 + 2, "chart should cover the ownership window plus margin when it exceeds double the lifespan");
 });
 
 test("computeLifetimeMonthlyCosts: expected risk cost grows with age and eventually makes the total cost curve turn upward again (regression: risk cost was previously missing from this curve entirely)", () => {

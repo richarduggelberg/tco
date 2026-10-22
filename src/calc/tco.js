@@ -295,20 +295,13 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
   const isLeasing = financingMethod === "leasing";
   const monthlyDiscountRate = annualToMonthlyRate(assumptions.discountRateAnnual);
 
-  // Visa hela bilens liv (en rimlig totallivslängd), men förläng vid behov så att
-  // ägandeperioden plus lite marginal efter försäljning alltid ryms, OCH så att
-  // överlevnadskurvan (se nedan) hinner nå ner till den lägsta markerade sannolikheten.
-  const fullLifeMonths = 18 * 12;
-  const maxLifeMonths = 60 * 12; // Skydd mot oändlig förlängning vid orimliga riskparametrar
-  const lowestSurvivalMilestone = SURVIVAL_MILESTONES[SURVIVAL_MILESTONES.length - 1];
-  let totalLifeMonths = Math.max(fullLifeMonths, ageAtPurchaseMonths + months + 24);
-  let lifeValue = buildLifeValue(totalLifeMonths, ageAtPurchaseMonths, price, yearlyRates, ageRateMultiplier);
-  let { survival, expectedRiskMonthly } = buildSurvivalAndRiskCost(totalLifeMonths, lifeValue, price, ageAtPurchaseMonths, ageRateMultiplier, assumptions.risk);
-  while (survival[totalLifeMonths] > lowestSurvivalMilestone && totalLifeMonths < maxLifeMonths) {
-    totalLifeMonths += 5 * 12;
-    lifeValue = buildLifeValue(totalLifeMonths, ageAtPurchaseMonths, price, yearlyRates, ageRateMultiplier);
-    ({ survival, expectedRiskMonthly } = buildSurvivalAndRiskCost(totalLifeMonths, lifeValue, price, ageAtPurchaseMonths, ageRateMultiplier, assumptions.risk));
-  }
+  // Visa hela bilens liv, men inte längre än till DUBBLA den antagna livslängden
+  // (weibullScaleMonths = "Förväntad livslängd" i UI:t) - längre än så är inte realistiskt.
+  // Se dock till att ägandeperioden plus lite marginal efter försäljning alltid ryms.
+  const assumedLifespanMonths = assumptions.risk.weibullScaleMonths;
+  const totalLifeMonths = Math.max(2 * assumedLifespanMonths, ageAtPurchaseMonths + months + 24);
+  const lifeValue = buildLifeValue(totalLifeMonths, ageAtPurchaseMonths, price, yearlyRates, ageRateMultiplier);
+  const { survival, expectedRiskMonthly } = buildSurvivalAndRiskCost(totalLifeMonths, lifeValue, price, ageAtPurchaseMonths, ageRateMultiplier, assumptions.risk);
   const survivalMilestones = SURVIVAL_MILESTONES.map((probability) => ({
     probability,
     ageYears: findSurvivalAgeYears(survival, probability),
