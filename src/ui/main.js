@@ -70,16 +70,37 @@ function updateImpliedNewPriceNote() {
   impliedNewPriceNote.classList.remove("hidden");
 }
 
+// Fält som fylls i automatiskt utifrån drivmedel. Vi kommer ihåg vilka fält användaren
+// själv har rört, så att ett byte av drivmedel inte skriver över manuellt angivna värden.
+const fuelDerivedFieldIds = [
+  "taxMalusAnnual",
+  "taxNormalAnnual",
+  "taxMalusYears",
+  "expectedLifeYears",
+  "repairCostMedian",
+  "reliabilityFactor",
+];
+const manuallyEditedFields = new Set();
+for (const id of fuelDerivedFieldIds) {
+  document.getElementById(id)?.addEventListener("input", () => manuallyEditedFields.add(id));
+}
+
+/** Sätter ett fältvärde om användaren inte redan har ändrat fältet manuellt. */
+function setFieldUnlessEdited(id, value) {
+  if (manuallyEditedFields.has(id)) return;
+  document.getElementById(id).value = value;
+}
+
 /** Fyller i rimliga standardvärden för skatt/haveririsk baserat på valt drivmedel. */
 function applyFuelTypeDefaults() {
   const defaults = fuelTypeDefaults[fuelTypeSelect.value];
   if (!defaults) return;
-  document.getElementById("taxMalusAnnual").value = defaults.tax.malusAnnualAmount;
-  document.getElementById("taxNormalAnnual").value = defaults.tax.normalAnnualAmount;
-  document.getElementById("taxMalusYears").value = defaults.tax.malusYears;
-  document.getElementById("expectedLifeYears").value = Math.round(defaults.risk.weibullScaleMonths / 12);
-  document.getElementById("repairCostMedian").value = defaults.risk.repairCostMedian;
-  document.getElementById("reliabilityFactor").value = defaults.risk.reliabilityFactor;
+  setFieldUnlessEdited("taxMalusAnnual", defaults.tax.malusAnnualAmount);
+  setFieldUnlessEdited("taxNormalAnnual", defaults.tax.normalAnnualAmount);
+  setFieldUnlessEdited("taxMalusYears", defaults.tax.malusYears);
+  setFieldUnlessEdited("expectedLifeYears", Math.round(defaults.risk.weibullScaleMonths / 12));
+  setFieldUnlessEdited("repairCostMedian", defaults.risk.repairCostMedian);
+  setFieldUnlessEdited("reliabilityFactor", defaults.risk.reliabilityFactor);
 }
 
 fuelTypeSelect.addEventListener("change", () => {

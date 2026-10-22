@@ -4,7 +4,7 @@ export const defaultAssumptions = {
   // Allmänt
   discountRateAnnual: 0.05, // Alternativkostnad för kapital, används för att nuvärdesberäkna ALLA finansieringsmetoder lika
   holdingPeriodYears: 5,
-  annualMileageKm: 1500 * 10, // ~15 000 mil/år i km (15000)
+  annualMileageKm: 1100 * 10, // 1 100 mil/år = 11 000 km/år (svenskt snitt)
   ageAtPurchaseYears: 0, // Bilens kalenderålder (sedan tillverkning) vid köpet - 0 = nyköpt
 
   // Körsträckans påverkan på bilens "ålder": en bil som körs mer åldras (värdemässigt
@@ -88,32 +88,33 @@ export const defaultAssumptions = {
     numSimulations: 3000,
     weibullShape: 2.5, // k - ökande haveriintensitet med ålder
     weibullScaleMonths: 204, // lambda - karaktäristisk livslängd (17 år)
-    repairCostMedian: 25000, // SEK, log-normalfördelning
+    repairCostMedian: 35000, // SEK, log-normalfördelning (moderna bilar: sensorer, elektronik, växellåda)
     repairCostSigma: 0.8, // log-normal spridningsparameter
-    totalLossThreshold: 0.5, // Totalhaveri om reparationskostnad > 50% av bilens aktuella värde
+    totalLossThreshold: 0.7, // Totalhaveri om reparationskostnad > 70% av bilens aktuella värde
     reliabilityFactor: 1.0, // 1 = snitt, <1 mer pålitlig, >1 mindre pålitlig
   },
 };
 
 /**
  * Skatte- och riskantaganden som skiljer sig åt mellan drivmedel. Används av UI:t för att
- * fylla i rimliga standardvärden när användaren byter drivmedel (användaren kan sedan
- * justera fritt). Elbilar: ingen bonus-malus (låg platt skatt), färre rörliga/slitagedelar
- * ger lägre snitt-reparationskostnad och något lägre haverifrekvens, men batteribyten är
- * sällsynta och mycket dyra vilket ger en bredare (mer högerskev) kostnadsfördelning.
- * Diesel: högre fordonsskatt än bensin (permanent dieselpåslag utöver CO2-delen).
+ * fylla i rimliga standardvärden när användaren byter drivmedel - men bara för fält som
+ * användaren inte redan har ändrat manuellt. Elbilar: ingen bonus-malus (låg platt skatt),
+ * färre rörliga/slitagedelar ger lägre snitt-reparationskostnad och något lägre haveri-
+ * frekvens, men batteribyten är sällsynta och mycket dyra vilket ger en bredare (mer
+ * högerskev) kostnadsfördelning (högre repairCostSigma). Diesel: högre fordonsskatt än
+ * bensin (permanent dieselpåslag utöver CO2-delen).
  */
 export const fuelTypeDefaults = {
   bensin: {
     tax: { malusAnnualAmount: 6000, normalAnnualAmount: 2000, malusYears: 3 },
-    risk: { weibullScaleMonths: 204, repairCostMedian: 25000, repairCostSigma: 0.8, reliabilityFactor: 1.0 },
+    risk: { weibullScaleMonths: 204, repairCostMedian: 35000, repairCostSigma: 0.8, reliabilityFactor: 1.0 },
   },
   diesel: {
     tax: { malusAnnualAmount: 9000, normalAnnualAmount: 3600, malusYears: 3 },
-    risk: { weibullScaleMonths: 204, repairCostMedian: 27000, repairCostSigma: 0.8, reliabilityFactor: 1.0 },
+    risk: { weibullScaleMonths: 204, repairCostMedian: 37000, repairCostSigma: 0.8, reliabilityFactor: 1.0 },
   },
   el: {
     tax: { malusAnnualAmount: 360, normalAnnualAmount: 360, malusYears: 3 }, // Ingen malus för elbilar
-    risk: { weibullScaleMonths: 224, repairCostMedian: 15000, repairCostSigma: 1.1, reliabilityFactor: 0.85 },
+    risk: { weibullScaleMonths: 224, repairCostMedian: 20000, repairCostSigma: 1.3, reliabilityFactor: 0.85 },
   },
 };
