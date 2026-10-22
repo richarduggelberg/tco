@@ -14,6 +14,80 @@
 
   <main>
     <form id="tco-form" class="card">
+      <h2>Finansiering</h2>
+      <div class="grid">
+        <div>
+          <label for="financingMethod">Finansieringsmetod</label>
+          <select id="financingMethod">
+            <option value="kontant">Kontantköp</option>
+            <option value="billan">Billån</option>
+            <option value="bolan">Bolån (höjd belåning)</option>
+            <option value="leasing">Privatleasing</option>
+          </select>
+        </div>
+      </div>
+
+      <fieldset id="billan-fields" class="hidden">
+        <legend>Billån</legend>
+        <div class="grid">
+          <div>
+            <label for="billanDownPayment">Kontantinsats (%)</label>
+            <input type="number" id="billanDownPayment" value="20" min="0" max="100" step="any">
+          </div>
+          <div>
+            <label for="billanRate">Ränta (%/år)</label>
+            <input type="number" id="billanRate" value="7" min="0" max="25" step="any">
+          </div>
+          <div>
+            <label for="billanTerm">Löptid (år)</label>
+            <input type="number" id="billanTerm" value="5" min="1" max="15" step="any">
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset id="bolan-fields" class="hidden">
+        <legend>Bolån</legend>
+        <div class="grid">
+          <div>
+            <label for="bolanDownPayment">Kontantinsats (%)</label>
+            <input type="number" id="bolanDownPayment" value="0" min="0" max="100" step="any">
+          </div>
+          <div>
+            <label for="bolanRate">Ränta (%/år)</label>
+            <input type="number" id="bolanRate" value="2.6" min="0" max="15" step="any">
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset id="leasing-fields" class="hidden">
+        <legend>Privatleasing</legend>
+        <div class="grid">
+          <div>
+            <label for="leasingFee">Leasingavgift (kr/mån)</label>
+            <input type="number" id="leasingFee" value="4500" min="0" step="any">
+          </div>
+          <div>
+            <label for="leasingFirstPayment">Förhöjd första avgift (kr)</label>
+            <input type="number" id="leasingFirstPayment" value="0" min="0" step="any">
+          </div>
+          <div>
+            <label for="leasingServiceIncluded">Service ingår i avgiften</label>
+            <select id="leasingServiceIncluded">
+              <option value="true" selected>Ja</option>
+              <option value="false">Nej</option>
+            </select>
+          </div>
+          <div>
+            <label for="leasingWinterTires">Vinterdäck ingår i avgiften</label>
+            <select id="leasingWinterTires">
+              <option value="false" selected>Nej</option>
+              <option value="true">Ja</option>
+            </select>
+          </div>
+        </div>
+        <p class="note">Fyll i en verklig leasingofferta (t.ex. från en återförsäljare eller en jämförelsesajt). Vid leasing äger du aldrig bilen - restvärde och haveririsk bärs av leasingbolaget och visas därför inte i uppdelningen nedan. Fordonsskatt ingår normalt INTE i leasingavgiften och visas därför alltid separat.</p>
+      </fieldset>
+
       <h2>Fordon &amp; användning</h2>
       <div class="grid">
         <div>
@@ -119,84 +193,6 @@
         </div>
       </div>
 
-      <h2>Finansiering</h2>
-      <div class="grid">
-        <div>
-          <label for="financingMethod">Finansieringsmetod</label>
-          <select id="financingMethod">
-            <option value="kontant">Kontantköp</option>
-            <option value="billan">Billån</option>
-            <option value="bolan">Bolån (höjd belåning)</option>
-            <option value="leasing">Privatleasing</option>
-          </select>
-        </div>
-        <div>
-          <label for="discountRate">Alternativkostnad för kapital (%/år)</label>
-          <input type="number" id="discountRate" value="5" min="0" max="20" step="any">
-        </div>
-      </div>
-
-      <fieldset id="billan-fields" class="hidden">
-        <legend>Billån</legend>
-        <div class="grid">
-          <div>
-            <label for="billanDownPayment">Kontantinsats (%)</label>
-            <input type="number" id="billanDownPayment" value="20" min="0" max="100" step="any">
-          </div>
-          <div>
-            <label for="billanRate">Ränta (%/år)</label>
-            <input type="number" id="billanRate" value="7" min="0" max="25" step="any">
-          </div>
-          <div>
-            <label for="billanTerm">Löptid (år)</label>
-            <input type="number" id="billanTerm" value="5" min="1" max="15" step="any">
-          </div>
-        </div>
-      </fieldset>
-
-      <fieldset id="bolan-fields" class="hidden">
-        <legend>Bolån</legend>
-        <div class="grid">
-          <div>
-            <label for="bolanDownPayment">Kontantinsats (%)</label>
-            <input type="number" id="bolanDownPayment" value="0" min="0" max="100" step="any">
-          </div>
-          <div>
-            <label for="bolanRate">Ränta (%/år)</label>
-            <input type="number" id="bolanRate" value="2.6" min="0" max="15" step="any">
-          </div>
-        </div>
-      </fieldset>
-
-      <fieldset id="leasing-fields" class="hidden">
-        <legend>Privatleasing</legend>
-        <div class="grid">
-          <div>
-            <label for="leasingFee">Leasingavgift (kr/mån)</label>
-            <input type="number" id="leasingFee" value="4500" min="0" step="any">
-          </div>
-          <div>
-            <label for="leasingFirstPayment">Förhöjd första avgift (kr)</label>
-            <input type="number" id="leasingFirstPayment" value="0" min="0" step="any">
-          </div>
-          <div>
-            <label for="leasingServiceIncluded">Service ingår i avgiften</label>
-            <select id="leasingServiceIncluded">
-              <option value="true" selected>Ja</option>
-              <option value="false">Nej</option>
-            </select>
-          </div>
-          <div>
-            <label for="leasingWinterTires">Vinterdäck ingår i avgiften</label>
-            <select id="leasingWinterTires">
-              <option value="false" selected>Nej</option>
-              <option value="true">Ja</option>
-            </select>
-          </div>
-        </div>
-        <p class="note">Fyll i en verklig leasingofferta (t.ex. från en återförsäljare eller en jämförelsesajt). Vid leasing äger du aldrig bilen - restvärde och haveririsk bärs av leasingbolaget och visas därför inte i uppdelningen nedan. Fordonsskatt ingår normalt INTE i leasingavgiften och visas därför alltid separat.</p>
-      </fieldset>
-
       <h2>Löpande kostnader</h2>
       <div class="grid">
         <div>
@@ -229,8 +225,12 @@
         oförutsägbara reparationer p.g.a. sällsynta men dyra batteribyten) - justera fritt.</p>
 
       <details>
-        <summary>Avancerat: haveririsk &amp; värdeminskning</summary>
+        <summary>Avancerat: haveririsk, kapitalkostnad &amp; värdeminskning</summary>
         <div class="grid" style="margin-top: 1rem;">
+          <div>
+            <label for="discountRate">Alternativkostnad för kapital (%/år)</label>
+            <input type="number" id="discountRate" value="4" min="0" max="20" step="any">
+          </div>
           <div>
             <label for="riskEnabled">Räkna med haveririsk</label>
             <select id="riskEnabled">

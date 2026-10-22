@@ -2,7 +2,7 @@
 
 export const defaultAssumptions = {
   // Allmänt
-  discountRateAnnual: 0.05, // Alternativkostnad för kapital, används för att nuvärdesberäkna ALLA finansieringsmetoder lika
+  discountRateAnnual: 0.04, // Alternativkostnad för kapital, används för att nuvärdesberäkna ALLA finansieringsmetoder lika
   holdingPeriodYears: 5,
   annualMileageKm: 1100 * 10, // 1 100 mil/år = 11 000 km/år (svenskt snitt)
   ageAtPurchaseYears: 0, // Bilens kalenderålder (sedan tillverkning) vid köpet - 0 = nyköpt
