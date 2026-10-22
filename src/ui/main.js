@@ -350,8 +350,15 @@ function renderLifetimeChart(input) {
           ],
         },
       },
-      scales: {
-        x: { type: "linear", title: { display: true, text: "Bilens ålder (år)" } },
+            scales: {
+        x: {
+          type: "linear",
+          min: 0,
+          // Låt axeln sluta exakt där datat slutar (annars förlänger Chart.js den till
+          // nästa "jämna" tick, t.ex. 35 när sista punkten ligger på 34).
+          max: lifetime.ageYears[lifetime.ageYears.length - 1],
+          title: { display: true, text: "Bilens ålder (år)" },
+        },
         y: { beginAtZero: true, stacked: true, title: { display: true, text: "Kr/månad" } },
       },
     },
