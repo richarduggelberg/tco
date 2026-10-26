@@ -63,3 +63,80 @@ Known caveats / not done:
 - The stacked-area lifetime chart has NOT been visually verified in a browser. It uses the
   standard Chart.js pattern (y.stacked: true + per-dataset stack + fill: true) and the
   underlying data is covered by tests, but a quick manual look in a browser is recommended.
+
+Improvement ideas (recorded after the nypris/restvärde work - none of these are done):
+
+1. Input validation: three paths produce silent garbage today
+   - Clearing Innehavstiden gives months = 0 and a headline of NaN (levelMonthlyPayment then
+     divides by zero).
+   - Clearing "Förväntad livslängd" (expectedLifeYears) gives weibullScaleMonths = 0, and
+     weibullHazard then returns Infinity: the result becomes 94% total-loss risk at
+     55 435 kr/month against a deterministic 5 925 kr. That field has no `required` attribute
+     and Number("") is 0.
+   - Letters in Inköpspris pass through parseThousands as 0 and compute quietly (a meaningless
+     2 607 kr/month).
+   There is no validation layer and no error surface, so the page shows a confident number
+   instead of refusing. Fix: a validate(input) pass plus a visible summary, and never render
+   NaN/Infinity.
+
+2. Tests do not gate the deploy
+   - .github/workflows/pages.yml deploys to Pages on every push to main and never runs the
+     suite (96 tests).
+   - No package.json, so a fresh clone has no documented way to run them, and `node --test
+     tests/` does not work on Node 22 at all - it has to be `node --test tests/*.test.js`.
+   - Both real bugs in the restvärde/nypris work were UI wiring rather than math (a stale
+     leasing note, and the restvärde note claiming a calibration to "0 kr"). Math tests cannot
+     catch those. A DOM-shim smoke test was written ad hoc both times and thrown away; it
+     should be permanent, and it would guard the 59 element ids that main.js reads out of
+     index.html's 63 (65 getElementById calls in total).
+
+3. The Monte Carlo blocks the UI thread
+   - computeTco measures 265 ms for 5 years and 1 228 ms for 20 years with 3000 simulations,
+     synchronously inside the submit handler. Phones will be several times slower, and there
+     is no spinner and no disabled button.
+   - Options: spinner + disabled button (smallest), a Web Worker, or scaling numSimulations
+     with the horizon. The lifetime chart itself is cheap (1-4 ms).
+
+4. Works offline, but cannot be used offline
+   - All calculation is client-side, which suits the real use case (comparing at a dealership
+     with bad signal), but Chart.js is loaded from cdn.jsdelivr.net, so with no network the
+     whole page breaks.
+   - No manifest and no service worker, so it cannot be installed to the home screen.
+   - Fix: vendor Chart.js and add manifest + service worker, i.e. a real offline PWA.
+
+5. A comparison tool that cannot compare or share
+   - One configuration at a time: comparing kontant/billån/leasing means changing fields and
+     remembering the previous number.
+   - No URL state, so a calculation cannot be bookmarked or sent to anyone. The input is
+     already a plain JSON assumptions object, so encoding it in the location hash is low-risk,
+     and a "pin this result" compare table could then sit on top of it.
+
+6. Modelling gaps that matter for a Swedish buyer
+   - Ränteavdrag is missing entirely, i.e. the 30% interest deduction. It moves the
+     billån/bolån comparison, which is the main purpose of the tool.
+   - Bolån is modelled as interest-only (deliberate, documented) but amorteringskrav is real,
+     and the hardcoded 2.6% rate is well below current levels.
+   - No escalation: over the lifetime chart's 30+ year horizon, fuel and service are flat in
+     nominal terms.
+   - Sensitivity and break-even would be nearly free given how pure the calc functions are: a
+     tornado chart (±30% fuel, ±10% resale) and "how long must I keep it for kontant to beat
+     leasing?".
+   - The bonus-malus and tax defaults are assumptions from earlier work, and Swedish rules
+     change, so they should be re-verified against current regler rather than trusted.
+
+7. Polish and accessibility
+   - The result headline has no aria-live, so a screen reader user gets no announcement after
+     Beräkna. The charts have no text alternative (the breakdown table covers the bar chart
+     partly; the lifetime chart has none).
+   - The field notes are not linked to their inputs (aria-describedby), and there are no
+     :focus-visible styles.
+   - No dark mode (color-scheme: light is hardcoded) and no print stylesheet - a one-page
+     printable summary is the natural artifact for this tool.
+   - No favicon, no theme-color, no description or Open Graph tags, so a shared link looks
+     bare.
+   - The thousands-separator cursor-restore hack and the datalist clear-on-focus workaround
+     are fragile on mobile, and the field notes have grown into long dense paragraphs (a short
+     label plus <details> would read better).
+   - src/ui/main.js is ~500 lines mixing DOM refs, note text and chart config; splitting out
+     notes.js/charts.js would help. index.html repeats its <option> lists by hand and could
+     build them from assumptions.js instead.
