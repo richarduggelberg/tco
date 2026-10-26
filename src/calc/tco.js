@@ -1,5 +1,5 @@
 import { financingCashflow, loanSeries } from "./financing.js";
-import { buildValueSeries, scaledYearlyRates, solveRateMultiplierForResidual } from "./depreciation.js";
+import { buildValueSeries, scaledYearlyRates, solveRateMultiplierForResidual, valueAtAge, impliedNewPrice } from "./depreciation.js";
 import { simulateRiskPaths, weibullHazard } from "./risk.js";
 import { presentValue, levelMonthlyPayment, annualToMonthlyRate } from "./npv.js";
 import {
@@ -53,50 +53,138 @@ export function mileageAgeRateMultiplier(assumptions) {
 }
 
 /**
- * Löser upp vilken värdeminskningskurva som ska användas för en kalkyl:
- * - Om ett restvärde angetts (assumptions.depreciation.residualTarget) räknas kurvans
- *   justeringsfaktor BAKLÄNGES så att värdet vid ägandeperiodens slut blir exakt det.
- * - Annars används användarens justeringsfaktor (assumptions.depreciation.rateMultiplier).
- * Returnerar den redan skalade kurvan plus uppgifter om kalibreringen, så att både
- * kalkylen och UI:t beskriver samma sak.
+ * Löser upp vilken värdeminskningskurva som ska användas för en kalkyl. Tre källor, i prioritets-
+ * ordning (de två första kräver att användaren angett ett känt belopp):
+ * 1. Restvärdet - kurvan kalibreras baklänges från inköpspriset till restvärdet vid försäljningen.
+ * 2. Nypriset - kurvan kalibreras mot bilens EGEN historik: nypris vid ålder 0 -> inköpspris vid
+ *    köptillfället (motsvarar att vända på impliedNewPrice).
+ * 3. Användarens justeringsfaktor (rateMultiplier).
+ * Ett restvärde och ett nypris kan inte båda styra samma kurva (en enda faktor kan inte uppfylla
+ * båda), och restvärdet vinner då - det är det belopp användaren faktiskt räknar med vid
+ * försäljningen. Nypriset används ändå för att bedöma inköpspriset, se assessPurchasePrice.
+ * Returnerar den redan skalade kurvan plus uppgifter om kalibreringen, så att både kalkylen och
+ * UI:t beskriver samma sak.
  * @param {object} input - { price, months, assumptions }
  * @returns {{yearlyRates: number[], rateMultiplier: number, calibrated: boolean,
- *   feasible: boolean, residualTarget: number|null, ageAtPurchaseMonths: number,
- *   ageRateMultiplier: number}}
+ *   feasible: boolean, source: "residual"|"newPrice"|"multiplier", residualTarget: number|null,
+ *   newPrice: number|null, ageAtPurchaseMonths: number, ageRateMultiplier: number}}
+ *   `calibrated` säger om ett belopp (restvärde eller nypris) styrde kurvan, `source` vilket,
+ *   och `feasible` om den kalibreringen i så fall gick att uppfylla - t.ex. går ett restvärde
+ *   över inköpspriset, eller en historik där inköpspriset är högre än nypriset, inte att
+ *   uttrycka. När en kalibrering inte går igenom används justeringsfaktorn i stället.
  */
 export function resolveDepreciation({ price, months, assumptions }) {
-  const { yearlyRates, rateMultiplier = 1, residualTarget } = assumptions.depreciation;
+  const { yearlyRates, rateMultiplier = 1, residualTarget, newPrice } = assumptions.depreciation;
   const ageAtPurchaseMonths = Math.round((assumptions.ageAtPurchaseYears ?? 0) * 12);
   const ageRateMultiplier = mileageAgeRateMultiplier(assumptions);
-  const context = { ageAtPurchaseMonths, ageRateMultiplier };
-
-  if (!(residualTarget > 0)) {
-    return {
-      ...context,
-      yearlyRates: scaledYearlyRates(yearlyRates, rateMultiplier),
-      rateMultiplier,
-      calibrated: false,
-      feasible: true,
-      residualTarget: null,
-    };
-  }
-
-  const solution = solveRateMultiplierForResidual({
-    initialValue: price,
-    months,
-    yearlyRates,
-    targetResidual: residualTarget,
+  const context = {
     ageAtPurchaseMonths,
     ageRateMultiplier,
-  });
-  return {
+    residualTarget: residualTarget > 0 ? residualTarget : null,
+    newPrice: newPrice > 0 ? newPrice : null,
+  };
+  const calibratedFrom = (solution, source) => ({
     ...context,
     yearlyRates: scaledYearlyRates(yearlyRates, solution.rateMultiplier),
     rateMultiplier: solution.rateMultiplier,
     calibrated: true,
     feasible: solution.feasible,
-    residualTarget,
+    source,
+  });
+
+  // 1. Restvärdet: kurvan ska gå från inköpspriset till restvärdet under innehavstiden.
+  if (context.residualTarget) {
+    return calibratedFrom(
+      solveRateMultiplierForResidual({
+        initialValue: price,
+        months,
+        yearlyRates,
+        targetResidual: context.residualTarget,
+        ageAtPurchaseMonths,
+        ageRateMultiplier,
+      }),
+      "residual"
+    );
+  }
+
+  // 2. Nypriset: kurvan ska gå från nypriset vid ålder 0 till inköpspriset vid köpet. Bara en
+  //    begagnad bil har en historik att kalibrera mot (vid ålder 0 är nypris = inköpspris).
+  let newPriceUnusable = false;
+  if (context.newPrice && ageAtPurchaseMonths > 0 && price > 0) {
+    const solution = solveRateMultiplierForResidual({
+      initialValue: context.newPrice,
+      months: ageAtPurchaseMonths,
+      yearlyRates,
+      targetResidual: price,
+    });
+    if (solution.feasible) return calibratedFrom(solution, "newPrice");
+    // Historiken går inte att uttrycka (t.ex. inköpspris >= nypris, eller ett pris som kräver en
+    // orimligt brant kurva) - fall igenom till justeringsfaktorn och rapportera det.
+    newPriceUnusable = true;
+  }
+
+  // 3. Ingen användbar beloppsuppgift: använd justeringsfaktorn som den är.
+  return {
+    ...context,
+    yearlyRates: scaledYearlyRates(yearlyRates, rateMultiplier),
+    rateMultiplier,
+    calibrated: false,
+    feasible: !newPriceUnusable,
+    source: "multiplier",
   };
+}
+
+/**
+ * Bedömer inköpspriset mot modellens "fair value". Kurvan anpassas så att den går från bilens
+ * nypris (ålder 0) till det angivna restvärdet (vid försäljningen), och kurvans värde vid
+ * köptillfället jämförs med vad bilen faktiskt kostade. Kräver alltså både nypris och restvärde
+ * samt en bil som hade en ålder vid köpet - annars finns inget att jämföra mot.
+ *
+ * Notera att kostnaden för värdeminskningen i kalkylen alltid räknas från inköpspriset; nypriset
+ * är bara en måttstock (och ett sätt att kalibrera kurvan). Betalar man under modellvärdet blir
+ * värdeminskningen mindre än modellen räknar med, och tvärtom.
+ * @param {object} input - { price, months, assumptions }
+ * @returns {{fairValue: number, paid: number, difference: number, relativeDifference: number,
+ *   rateMultiplier: number}|null} null när bedömningen inte går att göra
+ */
+export function assessPurchasePrice({ price, months, assumptions }) {
+  const { yearlyRates, residualTarget, newPrice } = assumptions.depreciation;
+  const ageAtPurchaseMonths = Math.round((assumptions.ageAtPurchaseYears ?? 0) * 12);
+  if (!(newPrice > 0) || !(residualTarget > 0) || !(price > 0) || !(months > 0) || ageAtPurchaseMonths <= 0) {
+    return null;
+  }
+
+  // Samma kurva som livscykeldiagrammets bak- och framträkning: kalenderålder före köpet,
+  // körsträcke-viktad ålder efter. Här är båda ändpunkterna kända, så kurvan anpassas mellan
+  // nypriset och restvärdet - och värdet vid köptillfället följer av den anpassningen.
+  const ageRateMultiplier = mileageAgeRateMultiplier(assumptions);
+  const solution = solveRateMultiplierForResidual({
+    initialValue: newPrice,
+    months: ageAtPurchaseMonths + months * ageRateMultiplier,
+    yearlyRates,
+    targetResidual: residualTarget,
+  });
+  if (!solution.feasible) return null;
+
+  const fairValue = valueAtAge(newPrice, ageAtPurchaseMonths, scaledYearlyRates(yearlyRates, solution.rateMultiplier));
+  return {
+    fairValue,
+    paid: price,
+    difference: price - fairValue,
+    relativeDifference: fairValue > 0 ? (price - fairValue) / fairValue : 0,
+    rateMultiplier: solution.rateMultiplier,
+  };
+}
+
+/**
+ * Modellens egen uppskattning av bilens nypris (baklänges ur kurvan), UTAN att ta hänsyn till
+ * ett angivet nypris eller restvärde. Används för att visa hur väl användarens nypris stämmer
+ * med standardkurvan.
+ */
+export function modelImpliedNewPrice({ price, assumptions }) {
+  const { yearlyRates, rateMultiplier = 1 } = assumptions.depreciation;
+  const ageAtPurchaseMonths = Math.round((assumptions.ageAtPurchaseYears ?? 0) * 12);
+  return impliedNewPrice(price, ageAtPurchaseMonths, scaledYearlyRates(yearlyRates, rateMultiplier));
 }
 
 /**
@@ -249,6 +337,7 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
       rateMultiplier: depreciation.rateMultiplier,
       calibrated: depreciation.calibrated,
       feasible: depreciation.feasible,
+      source: depreciation.source,
     },
   };
 }

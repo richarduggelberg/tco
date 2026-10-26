@@ -20,12 +20,18 @@ export const defaultAssumptions = {
   depreciation: {
     yearlyRates: [0.20, 0.15, 0.12, 0.10, 0.10, 0.08, 0.08, 0.08, 0.08, 0.08], // år 1..10, år 11+ använder sista värdet
     // Justeringsfaktor på kurvan ovan (1 = standard, 1.3 = 30% snabbare värdetapp, 0.7 = långsammare).
-    // Alla bilar värdeminskar inte i samma takt (märke/modell, efterfrågan, skick) - används när
-    // inget restvärde är angett.
+    // Alla bilar värdeminskar inte i samma takt (märke/modell, efterfrågan, skick). Används bara
+    // när varken restvärde eller nypris är angett.
     rateMultiplier: 1,
     // Önskat restvärde (kr) vid ägandeperiodens slut. När det är satt (inte null/0) löses
     // rateMultiplier BAKLÄNGES så att värdeminskningskurvan landar exakt på detta värde.
+    // Har högst prioritet av de tre sätten att bestämma kurvan.
     residualTarget: null,
+    // Bilens nypris (kr), om det är känt. Bara meningsfullt för en bil som hade en ålder vid
+    // köpet (> 0 år): kurvan kalibreras då mot bilens EGEN historik, dvs. från nypriset vid
+    // ålder 0 till inköpspriset vid köptillfället. Används när inget restvärde är angett, och
+    // dessutom alltid som måttstock för att bedöma inköpspriset (se assessPurchasePrice).
+    newPrice: null,
   },
 
   // Finansiering

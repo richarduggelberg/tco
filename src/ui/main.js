@@ -1,5 +1,4 @@
-import { computeTco, computeLifetimeMonthlyCosts, resolveDepreciation } from "../calc/tco.js";
-import { impliedNewPrice } from "../calc/depreciation.js";
+import { computeTco, computeLifetimeMonthlyCosts, resolveDepreciation, assessPurchasePrice, modelImpliedNewPrice } from "../calc/tco.js";
 import { defaultAssumptions, fuelTypeDefaults } from "../data/assumptions.js";
 import { formatCurrency, categoryLabels, formatThousands, parseThousands } from "./format.js";
 
@@ -11,6 +10,9 @@ const bolanFields = document.getElementById("bolan-fields");
 const leasingFields = document.getElementById("leasing-fields");
 const impliedNewPriceNote = document.getElementById("implied-newprice-note");
 const residualNote = document.getElementById("residual-note");
+const newPriceField = document.getElementById("newprice-field");
+const newPriceNote = document.getElementById("nypris-note");
+const verdictNote = document.getElementById("purchase-verdict");
 
 const resultsSection = document.getElementById("results");
 const resultMonthlyEl = document.getElementById("result-monthly");
@@ -67,29 +69,131 @@ function formatYears(months) {
   return (months / 12).toLocaleString("sv-SE", { maximumFractionDigits: 1 });
 }
 
-/** Uppdaterar de hjälptexter som beror på flera fält samtidigt (pris, restvärde, ålder m.m.). */
+/** Uppdaterar de hjälptexter som beror på flera fält samtidigt (pris, nypris, restvärde, ålder m.m.). */
 function updateDerivedNotes() {
   const input = readInputs();
+  updateNewPriceVisibility(input);
   updateImpliedNewPriceNote(input);
+  updateNewPriceNote(input);
   updateResidualNote(input);
+  updatePurchaseVerdict(input);
+}
+
+/** Nyprisfältet är bara relevant för en bil som inte var ny vid köpet (då är nypris = inköpspris). */
+function updateNewPriceVisibility(input) {
+  const wasUsed = input.assumptions.ageAtPurchaseYears > 0;
+  newPriceField.classList.toggle("hidden", !wasUsed);
+  if (!wasUsed) newPriceNote.classList.add("hidden");
 }
 
 /**
- * Visar uppskattat nypris, beräknat med SAMMA värdeminskningskurva som kalkylen använder
- * (dvs. inkl. ev. justerad takt och/eller restvärde-kalibrering).
+ * Visar modellens egen uppskattning av nypriset (baklänges ur kurvan, utan kalibrering). Är ett
+ * nypris ifyllt visas i stället hur det förhåller sig till uppskattningen.
  */
 function updateImpliedNewPriceNote(input) {
   if (!input.price || !input.assumptions.ageAtPurchaseYears || !input.months) {
     impliedNewPriceNote.classList.add("hidden");
     return;
   }
-  const { yearlyRates } = resolveDepreciation(input);
-  const newPrice = impliedNewPrice(input.price, Math.round(input.assumptions.ageAtPurchaseYears * 12), yearlyRates);
-  if (!Number.isFinite(newPrice)) {
+  const estimate = modelImpliedNewPrice(input);
+  if (!Number.isFinite(estimate)) {
     impliedNewPriceNote.classList.add("hidden");
     return;
   }
-  showNote(impliedNewPriceNote, `Uppskattat nypris (baklängesräknat från värdeminskningskurvan): ~${formatCurrency(newPrice)}`);
+  const entered = input.assumptions.depreciation.newPrice;
+  if (entered) {
+    const diffPercent = Math.round(((entered - estimate) / estimate) * 100);
+    showNote(
+      impliedNewPriceNote,
+      `Modellens uppskattning av nypriset: ~${formatCurrency(estimate)} (baklänges ur kurvan). ` +
+        `Du angav ${formatCurrency(entered)}, alltså ${Math.abs(diffPercent)}% ${diffPercent >= 0 ? "över" : "under"} uppskattningen.`
+    );
+    return;
+  }
+  showNote(impliedNewPriceNote, `Uppskattat nypris (baklängesräknat från värdeminskningskurvan): ~${formatCurrency(estimate)}`);
+}
+
+/**
+ * Förklarar vad nypriset används till: kurvan kalibreras mot bilens egen historik (nypris vid
+ * ålder 0 -> inköpspris vid köpet), eller - om även ett restvärde är ifyllt - som måttstock för
+ * att bedöma inköpspriset.
+ */
+function updateNewPriceNote(input) {
+  const newPrice = input.assumptions.depreciation.newPrice;
+  if (!newPrice) {
+    showNote(
+      newPriceNote,
+      "Tomt: modellens kurva används. Fyll i bilens nypris för att i stället kalibrera kurvan mot bilens faktiska värdetapp sedan ny."
+    );
+    return;
+  }
+  const ageMonths = input.assumptions.ageAtPurchaseYears * 12;
+  if (!(input.price > 0) || !(ageMonths > 0)) {
+    newPriceNote.classList.add("hidden");
+    return;
+  }
+  if (newPrice <= input.price) {
+    showNote(
+      newPriceNote,
+      "Inköpspriset är lika högt som (eller högre än) nypriset - modellen kan inte uttrycka en " +
+        "negativ värdeminskning, så standardkurvan (eller din justeringsfaktor under Avancerat) används i stället."
+    );
+    return;
+  }
+  // Genomsnittlig årlig värdeminskning sedan ny. Oberoende av kurvans form, eftersom båda
+  // ändpunkterna (nypris och inköpspris) är kända.
+  const annualLoss = (1 - Math.pow(input.price / newPrice, 12 / ageMonths)) * 100;
+  const lossText = `${Math.abs(annualLoss).toFixed(1).replace(".", ",")}% per år`;
+  const model = resolveDepreciation(input);
+  if (model.source === "newPrice") {
+    showNote(
+      newPriceNote,
+      `Kurvan kalibreras mot bilens egen historik: ${formatCurrency(newPrice)} vid ålder 0 och ` +
+        `${formatCurrency(input.price)} vid köpet (i snitt ${lossText} sedan ny) motsvarar ` +
+        `${Math.round(model.rateMultiplier * 100)}% av standardtakten.`
+    );
+    return;
+  }
+  if (model.source === "multiplier" && !model.feasible) {
+    showNote(
+      newPriceNote,
+      `Nypriset går inte att använda: värdetappet från ${formatCurrency(newPrice)} till ` +
+        `${formatCurrency(input.price)} skulle kräva en orimligt brant kurva. Standardkurvan används i stället.`
+    );
+    return;
+  }
+  showNote(
+    newPriceNote,
+    `Bilen har i snitt tappat ${lossText} sedan ny. Restvärdet styr kurvan under din innehavstid ` +
+      "(se nedan) - nypriset används här för att bedöma inköpspriset."
+  );
+}
+
+/**
+ * Bedömer inköpspriset mot modellens värde vid köptillfället: kurvan anpassas mellan nypriset
+ * (ålder 0) och restvärdet (vid försäljningen), och dess värde vid köpet jämförs med vad bilen
+ * faktiskt kostade. Kräver både nypris och restvärde.
+ */
+function updatePurchaseVerdict(input) {
+  const assessment = assessPurchasePrice(input);
+  if (!assessment) {
+    verdictNote.classList.add("hidden");
+    return;
+  }
+  const percent = Math.abs(Math.round(assessment.relativeDifference * 100));
+  const comparison = percent === 0
+    ? "i nivå med modellvärdet"
+    : `${percent}% ${assessment.difference > 0 ? "över" : "under"} modellvärdet`;
+  const judgement = percent === 0
+    ? "Värdeminskningen stämmer med modellen."
+    : assessment.difference > 0
+      ? "Högt pris: värdeminskningen blir större än modellen räknar med."
+      : "Bra pris: värdeminskningen blir mindre än modellen räknar med.";
+  showNote(
+    verdictNote,
+    `Modellvärde vid köpet: ${formatCurrency(assessment.fairValue)} (kurva mellan nypriset och ditt ` +
+      `restvärde) - du betalade ${formatCurrency(assessment.paid)}, dvs ${comparison}. ${judgement}`
+  );
 }
 
 /**
@@ -110,11 +214,16 @@ function updateResidualNote(input) {
   const target = input.assumptions.depreciation.residualTarget;
   const ratePercent = Math.round(model.rateMultiplier * 100);
 
-  if (!model.calibrated) {
+  // Bara restvärdet styr kurvan under innehavstiden - ett nypris kalibrerar visserligen samma
+  // kurva, men mot bilens historik, och då är det nyprisnoten som förklarar läget.
+  if (model.source !== "residual") {
     showNote(
       residualNote,
-      `Tomt: värdeminskningen följer modellens kurva (${ratePercent}% av standardtakten). ` +
-        "Fyll i ett restvärde du känner till för att låsa kurvan vid det värdet."
+      model.source === "newPrice"
+        ? `Tomt: kurvan styrs av nypriset ovan (${ratePercent}% av standardtakten). Fyll i ett ` +
+            "restvärde du känner till om du vill låsa kurvan vid det värdet i stället."
+        : `Tomt: värdeminskningen följer modellens kurva (${ratePercent}% av standardtakten). ` +
+            "Fyll i ett restvärde du känner till för att låsa kurvan vid det värdet."
     );
     return;
   }
@@ -204,12 +313,14 @@ function enableThousandsInput(id) {
 }
 enableThousandsInput("price");
 enableThousandsInput("residualValue");
+enableThousandsInput("newPrice");
 
 // Hjälptexterna (nypris, restvärde/kalibrering) beror på pris, restvärde, ålder, innehavstid
 // och körsträcka - uppdatera dem direkt när något av de fälten ändras.
 [
   "price",
   "residualValue",
+  "newPrice",
   "ageAtPurchase",
   "holdingYears",
   "annualMileage",
@@ -245,6 +356,16 @@ function readResidualTarget() {
   return digits ? Number(digits) : null;
 }
 
+/**
+ * Nypriset från fältet. Null när fältet är tomt, och även när bilen var ny vid köpet (då är
+ * nypriset samma sak som inköpspriset och fältet är dolt - ett ifyllt värde ska då ignoreras).
+ */
+function readNewPrice() {
+  const digits = document.getElementById("newPrice").value.replace(/\D/g, "");
+  if (!digits || !(Number(document.getElementById("ageAtPurchase").value) > 0)) return null;
+  return Number(digits);
+}
+
 function readInputs() {
   const assumptions = JSON.parse(JSON.stringify(defaultAssumptions));
 
@@ -263,6 +384,7 @@ function readInputs() {
   const multiplierRaw = document.getElementById("depreciationMultiplier").value.trim();
   assumptions.depreciation.rateMultiplier = multiplierRaw === "" ? 1 : Number(multiplierRaw) / 100;
   assumptions.depreciation.residualTarget = readResidualTarget();
+  assumptions.depreciation.newPrice = readNewPrice();
 
   assumptions.running.fuelType = fuelTypeSelect.value;
   assumptions.running.bensin.pricePerLiter = Number(document.getElementById("bensinPrice").value);

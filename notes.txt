@@ -7,23 +7,51 @@ Lifetime chart (bottom graph), stacked components:
 - Outside the ownership window the capital cost reflects the chosen financing method
   (except leasing, which only exists during ownership), instead of falling back to cash.
 
-Depreciation model: rate multiplier + optional restvärde (residual value):
-- "Värdeminskningstakt (% av standard)" under Avancerat scales the whole yearly-rate curve
-  (100 = standard, 150 = 50% faster value loss). It is applied to depreciation AND to the
-  value used by the haveri-risk total-loss check, since both read the same curve.
-- "Restvärde efter innehavstiden (kr)" (next to Inköpspris) is optional. When filled in, the
-  multiplier is solved BACKWARDS (bisection in solveRateMultiplierForResidual) so that the
-  curve lands exactly on that residual at the end of the holding period. The residual field
-  wins over the multiplier field; the solved percentage is shown in the result line and in a
-  note under the field. Empty field (or 0/negative) = the model's own curve is used.
-- A residual above the purchase price is impossible (it would need negative depreciation):
-  it degrades to "no depreciation" (multiplier 0) and the note says so.
-- Deliberate choice: the solved multiplier scales the WHOLE life curve, including the backward
-  extrapolation before the purchase. So entering a residual also moves the estimated nypris
-  shown for a used car (and the pre-purchase part of the lifetime chart). The alternative -
-  calibrating only inside the ownership window - would create a kink at the purchase month and
-  make the lifetime curve inconsistent with the TCO calculation.
-- Leasing ignores both (the leasing company carries the depreciation), which the note says.
+Depreciation model: three ways to pin the curve (in priority order):
+1. Restvärde ("Restvärde efter innehavstiden", bottom of Fordon & användning): calibrates the
+   ownership window backwards, inköpspris -> restvärde.
+2. Nypris ("Nypris", same section, only shown when Ålder vid köp > 0): calibrates the curve to
+   the car's OWN history - nypris at age 0 -> inköpspris at the purchase age. Same solver as the
+   restvärde, just anchored at age 0; it is the inverse of impliedNewPrice.
+3. "Värdeminskningstakt (% av standard)" under Avancerat: a manual multiplier on the whole curve
+   (100 = standard, 150 = 50% faster value loss). It feeds the depreciation AND the value the
+   haveri-risk total-loss check compares against, since both read the same curve.
+Only one of them can drive the single multiplier, so the order above decides. A residual always
+wins because it is the amount the owner actually budgets with; the nypris is still used for the
+purchase-price verdict below. Overall an empty field (or 0/negative) means "not provided".
+
+Deliberate choice: the solved multiplier scales the WHOLE life curve, including the backward
+extrapolation before the purchase. So entering a restvärde or a nypris also moves the estimated
+nypris shown for a used car (and the pre-purchase part of the lifetime chart). The alternative -
+calibrating only inside the ownership window - would create a kink at the purchase month and make
+the lifetime curve inconsistent with the TCO calculation.
+
+Purchase-price verdict (needs BOTH nypris and restvärde, and a car that was not new):
+- assessPurchasePrice() fits the curve across the whole life - nypris at age 0 to restvärde at the
+  sale - and compares that curve's value at the purchase age with what was actually paid. Under =
+  "Bra pris" (less value lost than the model assumes), over = "Högt pris".
+- The fair value therefore depends only on the nypris and the residual assumption, never on the
+  price paid (so lowering the price flips the verdict rather than moving the benchmark).
+- Caveat: the fit composes the backward leg (calendar months before the purchase) and the forward
+  leg (mileage-weighted age after it) in one remainingValueFactor evaluation, while the lifetime
+  chart's buildLifeValue steps month by month with midpoint rate interpolation. The two can differ
+  by a fraction of a percent, which is irrelevant for a percentage-level verdict.
+- Because the benchmark uses the restvärde, changing that assumption moves the verdict. That is
+  intended ("given that this car was worth nypris when new and X when you sell, what is it worth
+  today?"), but it is worth remembering when reading the note.
+
+Depreciation cost is always anchored at the PURCHASE PRICE (you cannot lose money you never paid).
+A nypris never becomes the depreciation base - with a 900 000 kr new price and a 300 000 kr
+purchase price the calibrated curve is much steeper, but the monthly depreciation stays in the
+same order of magnitude as without the nypris (regression-tested). Same rule for the restvärde.
+
+Edge cases (all covered by tests):
+- Restvärde above the purchase price, or nypris at/below the purchase price: the calibration
+  cannot be expressed (it would need negative depreciation). The manual/standard curve is used,
+  resolveDepreciation reports feasible: false, and the note explains which case it is.
+- A nypris is ignored for a car bought new (age 0), where it equals the purchase price; the field
+  is hidden, and a value left in the input is dropped in readInputs.
+- Leasing ignores all three (the leasing company carries the depreciation), which the note says.
 
 Known caveats / not done:
 - Boundary step: for an amortizing billån there is a small upward step at the "Säljs"

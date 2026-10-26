@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeTco, computeLifetimeMonthlyCosts } from "../src/calc/tco.js";
+import { computeTco, computeLifetimeMonthlyCosts, resolveDepreciation, assessPurchasePrice, modelImpliedNewPrice } from "../src/calc/tco.js";
 import { defaultAssumptions } from "../src/data/assumptions.js";
+import { valueAtAge } from "../src/calc/depreciation.js";
 
 function cloneAssumptions() {
   return JSON.parse(JSON.stringify(defaultAssumptions));
@@ -481,4 +482,170 @@ test("computeLifetimeMonthlyCosts uses the same calibrated curve as computeTco (
     "both entry points should solve for the same curve"
   );
   assert.ok(Math.abs(tco.residualValue - 100000) < 0.01);
+});
+
+// --- Nypris: kalibrering mot bilens egen historik -------------------------------------------
+
+/** Begagnad bil: 4 år gammal, köpt för 300 000 kr, nypris 450 000 kr. */
+function usedCarAssumptions({ newPrice = 450000, residualTarget = null, price = 300000 } = {}) {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = false;
+  assumptions.ageAtPurchaseYears = 4;
+  assumptions.depreciation.newPrice = newPrice;
+  assumptions.depreciation.residualTarget = residualTarget;
+  return { price, months: 60, financingMethod: "kontant", assumptions };
+}
+
+test("resolveDepreciation: a nypris alone calibrates the curve to the car's own history", () => {
+  const input = usedCarAssumptions();
+  const model = resolveDepreciation(input);
+
+  assert.equal(model.calibrated, true);
+  assert.equal(model.source, "newPrice");
+  // The calibrated curve must run from the new price at age 0 to the purchase price at 4 years
+  assert.ok(Math.abs(valueAtAge(450000, 48, model.yearlyRates) - 300000) < 0.01, "curve should hit the purchase price at 4 years");
+  // The car held its value better than the standard curve assumes, so the curve must be flatter
+  assert.ok(model.rateMultiplier < 1, `expected a flatter curve, got ${model.rateMultiplier}`);
+});
+
+test("resolveDepreciation: a car that lost value faster than the standard curve needs a steeper one", () => {
+  const input = usedCarAssumptions({ newPrice: 450000, price: 200000 });
+  const model = resolveDepreciation(input);
+  assert.ok(model.rateMultiplier > 1, `expected a steeper curve, got ${model.rateMultiplier}`);
+  assert.ok(Math.abs(valueAtAge(450000, 48, model.yearlyRates) - 200000) < 0.01);
+});
+
+test("resolveDepreciation: the residual target wins over the nypris when both are given", () => {
+  const input = usedCarAssumptions({ newPrice: 450000, residualTarget: 150000 });
+  const model = resolveDepreciation(input);
+  assert.equal(model.source, "residual");
+  assert.ok(Math.abs(model.residualTarget - 150000) < 1e-9);
+  assert.equal(model.newPrice, 450000, "the nypris is still reported, it is used for the verdict");
+});
+
+test("resolveDepreciation: a nypris is ignored for a car bought new (age 0), where it equals the purchase price", () => {
+  const input = usedCarAssumptions();
+  input.assumptions.ageAtPurchaseYears = 0;
+  const model = resolveDepreciation(input);
+  assert.equal(model.calibrated, false);
+  assert.equal(model.source, "multiplier");
+  assert.equal(model.rateMultiplier, 1);
+});
+
+test("computeTco: a nypris calibrates the value path (the future residual follows the car's own history)", () => {
+  const withNewPrice = usedCarAssumptions();
+  const result = computeTco(withNewPrice);
+  assert.equal(result.depreciationModel.source, "newPrice");
+
+  // No residual target given, so the end value is whatever the calibrated curve says
+  const withoutNewPrice = usedCarAssumptions({ newPrice: null });
+  const resultWithout = computeTco(withoutNewPrice);
+  // This car depreciated slower than the standard curve, so it should be worth more at the end
+  assert.ok(
+    result.residualValue > resultWithout.residualValue,
+    `expected a higher residual with the car's own (flatter) history, got ${result.residualValue} vs ${resultWithout.residualValue}`
+  );
+});
+
+test("computeTco: depreciation is charged from the purchase price, never from the nypris", () => {
+  // A 300 000 kr car with a 900 000 kr new price: the modelled loss since new is huge, but the
+  // user can only lose what they paid, so the monthly depreciation must stay far below what
+  // anchoring the curve at the nypris would give.
+  const input = usedCarAssumptions({ newPrice: 900000 });
+  const result = computeTco(input);
+
+  const nyprisAnchored = (900000 - result.residualValue) / 60;
+  assert.ok(
+    result.categoryMonthly.depreciation < nyprisAnchored / 2,
+    `depreciation ${result.categoryMonthly.depreciation} should be anchored at the 300 000 purchase price, not the nypris (${nyprisAnchored} per month)`
+  );
+  assert.ok(result.valueLost < 300000, "you cannot lose more than the purchase price");
+
+  // A steeper calibrated curve does cost more than the standard one, but from the purchase price
+  const standard = computeTco(usedCarAssumptions({ newPrice: null }));
+  assert.ok(result.categoryMonthly.depreciation > standard.categoryMonthly.depreciation);
+  assert.ok(result.valueLost > standard.valueLost);
+});
+
+// --- Bedömning av inköpspriset (nypris + restvärde) ------------------------------------------
+
+test("resolveDepreciation: an unusable nypris falls back to the manual multiplier and says so", () => {
+  // A car bought for more than it cost new cannot be expressed (no negative depreciation)
+  const dear = usedCarAssumptions({ newPrice: 250000, price: 300000 });
+  dear.assumptions.depreciation.rateMultiplier = 1.3;
+  const model = resolveDepreciation(dear);
+  assert.equal(model.source, "multiplier");
+  assert.equal(model.calibrated, false);
+  assert.equal(model.feasible, false, "the failed attempt should be reported");
+  assert.equal(model.rateMultiplier, 1.3, "the manual multiplier is used instead");
+
+  // And a price that would need an impossibly steep curve in the time available is reported the
+  // same way (1 000 kr for a 100 000 kr car after a single month)
+  const extreme = usedCarAssumptions({ newPrice: 100000, price: 1000 });
+  extreme.assumptions.ageAtPurchaseYears = 1 / 12;
+  const extremeModel = resolveDepreciation(extreme);
+  assert.equal(extremeModel.source, "multiplier");
+  assert.equal(extremeModel.feasible, false);
+});
+
+test("assessPurchasePrice needs both a nypris and a residual target", () => {
+  assert.equal(assessPurchasePrice(usedCarAssumptions()), null, "nypris alone is not enough");
+  assert.equal(assessPurchasePrice(usedCarAssumptions({ newPrice: null, residualTarget: 150000 })), null, "residual alone is not enough");
+  const newCar = usedCarAssumptions({ residualTarget: 150000 });
+  newCar.assumptions.ageAtPurchaseYears = 0;
+  assert.equal(assessPurchasePrice(newCar), null, "a car bought new has no history to judge against");
+});
+
+test("assessPurchasePrice: fit runs from the nypris to the residual, so the fair value sits between them", () => {
+  const input = usedCarAssumptions({ newPrice: 450000, residualTarget: 150000 });
+  const assessment = assessPurchasePrice(input);
+
+  assert.ok(assessment.fairValue > 150000 && assessment.fairValue < 450000, `fair value ${assessment.fairValue} should lie between the endpoints`);
+  // The ownership window keeps its own calibration (purchase price -> residual) even though the
+  // verdict uses a curve fitted across the whole life
+  const windowModel = resolveDepreciation(input);
+  assert.equal(windowModel.source, "residual");
+  assert.ok(
+    Math.abs(valueAtAge(300000, 60, windowModel.yearlyRates, 48) - 150000) < 0.01,
+    "the ownership window still lands on the residual from the purchase price"
+  );
+  assert.ok(assessment.fairValue < 300000, "this car has lost value faster than the fitted life curve, so the paid price is above fair value");
+  assert.ok(assessment.difference > 0);
+  assert.ok(assessment.relativeDifference > 0);
+});
+
+test("assessPurchasePrice: paying below the fair value flips the verdict", () => {
+  const cheap = assessPurchasePrice(usedCarAssumptions({ newPrice: 450000, residualTarget: 150000, price: 200000 }));
+  const dear = assessPurchasePrice(usedCarAssumptions({ newPrice: 450000, residualTarget: 150000, price: 300000 }));
+
+  assert.equal(cheap.fairValue, dear.fairValue, "the fair value depends only on the nypris and the residual, not on what was paid");
+  assert.ok(cheap.difference < 0, "200 000 for a car worth 236 000 is a good price");
+  assert.ok(dear.difference > 0);
+});
+
+test("assessPurchasePrice: relativeDifference is expressed against the fair value", () => {
+  const input = usedCarAssumptions({ newPrice: 450000, residualTarget: 150000, price: 300000 });
+  const assessment = assessPurchasePrice(input);
+  assert.ok(Math.abs(assessment.relativeDifference - assessment.difference / assessment.fairValue) < 1e-12);
+  assert.ok(Math.abs(assessment.paid - 300000) < 1e-9);
+});
+
+test("assessPurchasePrice: an unreachable residual (above the nypris) yields no verdict", () => {
+  const input = usedCarAssumptions({ newPrice: 450000, residualTarget: 500000 });
+  assert.equal(assessPurchasePrice(input), null);
+});
+
+test("modelImpliedNewPrice ignores an entered nypris and reflects only the standard curve", () => {
+  const withNypris = usedCarAssumptions();
+  const withoutNypris = usedCarAssumptions({ newPrice: null });
+  // Same estimate either way: the model's own guess does not read the field it is compared against
+  assert.equal(modelImpliedNewPrice(withNypris), modelImpliedNewPrice(withoutNypris));
+
+  const steeper = usedCarAssumptions();
+  steeper.assumptions.depreciation.rateMultiplier = 1.5;
+  assert.ok(modelImpliedNewPrice(steeper) > modelImpliedNewPrice(withNypris), "a steeper curve implies a higher new price");
+
+  // ...while the curve actually used for the calculation IS calibrated by the entered nypris
+  assert.ok(Math.abs(resolveDepreciation(withNypris).rateMultiplier - 1) > 0.01, "the calculation curve is calibrated");
+  assert.equal(resolveDepreciation(withoutNypris).rateMultiplier, 1);
 });

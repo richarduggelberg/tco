@@ -113,11 +113,6 @@
           </datalist>
         </div>
         <div>
-          <label for="residualValue">Restvärde efter innehavstiden (kr)</label>
-          <input type="text" inputmode="numeric" id="residualValue" placeholder="Tomt = modellens kurva">
-          <p class="note hidden" id="residual-note"></p>
-        </div>
-        <div>
           <label for="ageAtPurchase">Ålder vid köp (år)</label>
           <input type="number" id="ageAtPurchase" value="0" min="0" max="30" step="any" list="age-options">
           <datalist id="age-options">
@@ -196,7 +191,28 @@
             <option value="el">El</option>
           </select>
         </div>
+        <div class="hidden" id="newprice-field">
+          <label for="newPrice">Nypris (kr)</label>
+          <input type="text" inputmode="numeric" id="newPrice" placeholder="Tomt = modellens kurva">
+          <p class="note hidden" id="nypris-note"></p>
+        </div>
+        <div>
+          <label for="residualValue">Restvärde efter innehavstiden (kr)</label>
+          <input type="text" inputmode="numeric" id="residualValue" placeholder="Tomt = modellens kurva">
+          <p class="note hidden" id="residual-note"></p>
+          <p class="note hidden" id="purchase-verdict"></p>
+        </div>
       </div>
+
+      <p class="note">Nypris och restvärde är båda frivilliga och knyter värdeminskningskurvan till
+        kända belopp i stället för till standardantagandet. Nypris (bilens pris som ny) visas bara om
+        bilen hade en ålder vid köpet - det kalibrerar kurvan mot bilens egen historik, alltså
+        värdetappet från nypriset till priset du betalar. Restvärdet kalibrerar i stället kurvan
+        baklänges från inköpspriset till det värde du räknar med vid försäljningen. Är båda ifyllda
+        styr restvärdet kurvan under din innehavstid, medan nypriset används för att bedöma om
+        inköpspriset ligger under eller över modellens värde vid köptillfället (kurvan anpassas då
+        mellan nypriset och restvärdet). Kostnaden för värdeminskningen räknas alltid från
+        inköpspriset - du kan inte förlora pengar du aldrig har betalat.</p>
 
       <h2>Löpande kostnader</h2>
       <div class="grid">
@@ -332,9 +348,10 @@
           om "Vinterdäck ingår i avgiften" är ikryssat för leasing.</p>
         <p class="note">Värdeminskningstakten skalar hela kurvan (100% = standardkurvan, 150% = 50%
           snabbare värdetapp) - bilar värdeminskar olika snabbt beroende på märke, modell, skick och
-          efterfrågan. Är ett restvärde ifyllt i fältet bredvid inköpspriset används faktorn inte:
-          då löses kurvan baklänges så att bilen är värd exakt det angivna restvärdet när
-          innehavstiden är slut, och procentsatsen ovan visas istället som ett resultat av det.</p>
+          efterfrågan. Faktorn används bara när varken ett restvärde eller ett nypris är ifyllt i
+          Fordon &amp; användning: ett restvärde löses baklänges från inköpspriset, och ett nypris
+          kalibrerar kurvan mot bilens egen historik. Den värdeminskningstakt som krävs för det
+          visas då i stället som en nottext vid respektive fält.</p>
       </details>
 
       <button type="submit">Beräkna</button>
