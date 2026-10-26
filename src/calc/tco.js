@@ -1,5 +1,5 @@
 import { financingCashflow, loanSeries } from "./financing.js";
-import { buildValueSeries } from "./depreciation.js";
+import { buildValueSeries, scaledYearlyRates, solveRateMultiplierForResidual } from "./depreciation.js";
 import { simulateRiskPaths, weibullHazard } from "./risk.js";
 import { presentValue, levelMonthlyPayment, annualToMonthlyRate } from "./npv.js";
 import {
@@ -42,6 +42,62 @@ function standardNormalCdf(z) {
 /** Sannolikheter (fallande) som ska markeras på livscykeldiagrammets överlevnadskurva. */
 const SURVIVAL_MILESTONES = [0.5, 0.25, 0.1, 0.05, 0.01];
 
+/**
+ * Hur snabbt bilen "åldras" per kalendermånad (1 = normalt), utifrån antagen körsträcka.
+ * En högkörd bil åldras snabbare (värdemässigt OCH haverimässigt), en lågkörd långsammare.
+ */
+export function mileageAgeRateMultiplier(assumptions) {
+  const { baselineAnnualMileageKm, mileageWeight } = assumptions.vehicleAge;
+  const mileageRatio = assumptions.annualMileageKm / baselineAnnualMileageKm;
+  return mileageWeight * mileageRatio + (1 - mileageWeight);
+}
+
+/**
+ * Löser upp vilken värdeminskningskurva som ska användas för en kalkyl:
+ * - Om ett restvärde angetts (assumptions.depreciation.residualTarget) räknas kurvans
+ *   justeringsfaktor BAKLÄNGES så att värdet vid ägandeperiodens slut blir exakt det.
+ * - Annars används användarens justeringsfaktor (assumptions.depreciation.rateMultiplier).
+ * Returnerar den redan skalade kurvan plus uppgifter om kalibreringen, så att både
+ * kalkylen och UI:t beskriver samma sak.
+ * @param {object} input - { price, months, assumptions }
+ * @returns {{yearlyRates: number[], rateMultiplier: number, calibrated: boolean,
+ *   feasible: boolean, residualTarget: number|null, ageAtPurchaseMonths: number,
+ *   ageRateMultiplier: number}}
+ */
+export function resolveDepreciation({ price, months, assumptions }) {
+  const { yearlyRates, rateMultiplier = 1, residualTarget } = assumptions.depreciation;
+  const ageAtPurchaseMonths = Math.round((assumptions.ageAtPurchaseYears ?? 0) * 12);
+  const ageRateMultiplier = mileageAgeRateMultiplier(assumptions);
+  const context = { ageAtPurchaseMonths, ageRateMultiplier };
+
+  if (!(residualTarget > 0)) {
+    return {
+      ...context,
+      yearlyRates: scaledYearlyRates(yearlyRates, rateMultiplier),
+      rateMultiplier,
+      calibrated: false,
+      feasible: true,
+      residualTarget: null,
+    };
+  }
+
+  const solution = solveRateMultiplierForResidual({
+    initialValue: price,
+    months,
+    yearlyRates,
+    targetResidual: residualTarget,
+    ageAtPurchaseMonths,
+    ageRateMultiplier,
+  });
+  return {
+    ...context,
+    yearlyRates: scaledYearlyRates(yearlyRates, solution.rateMultiplier),
+    rateMultiplier: solution.rateMultiplier,
+    calibrated: true,
+    feasible: solution.feasible,
+    residualTarget,
+  };
+}
 
 /**
  * Försäkringskostnad för en given månad, baserat på bilens kalenderålder (sedan
@@ -74,13 +130,10 @@ function taxMonthlyCost(calendarAgeYears, tax) {
  */
 export function computeTco({ price, months, financingMethod, assumptions }) {
   const monthlyDiscountRate = annualToMonthlyRate(assumptions.discountRateAnnual);
-  const yearlyRates = assumptions.depreciation.yearlyRates;
-  const ageAtPurchaseMonths = Math.round((assumptions.ageAtPurchaseYears ?? 0) * 12);
-  // Körsträcka blandas in i bilens "åldrande" (värdeminskning OCH haveririsk): en bil som
-  // körs mer än baslinjen åldras snabbare per kalendermånad, och en lågkörd bil långsammare.
-  const { baselineAnnualMileageKm, mileageWeight } = assumptions.vehicleAge;
-  const mileageRatio = assumptions.annualMileageKm / baselineAnnualMileageKm;
-  const ageRateMultiplier = mileageWeight * mileageRatio + (1 - mileageWeight);
+  // Värdeminskningskurvan: användarens justeringsfaktor, eller - om ett restvärde angetts -
+  // den faktor som får kurvan att landa exakt på restvärdet vid ägandeperiodens slut.
+  const depreciation = resolveDepreciation({ price, months, assumptions });
+  const { yearlyRates, ageAtPurchaseMonths, ageRateMultiplier } = depreciation;
   // Vid leasing äger användaren aldrig bilen - leasingbolaget bär värdeminsknings-
   // och haveririsken, och tar normalt med service i leasingavgiften. Fordonsskatt
   // ingår däremot i princip aldrig i leasingavgiften utan betalas separat.
@@ -183,7 +236,21 @@ export function computeTco({ price, months, financingMethod, assumptions }) {
     };
   }
 
-  return { categoryMonthly, deterministicTotal, risk, residualValue, valueLost };
+  return {
+    categoryMonthly,
+    deterministicTotal,
+    risk,
+    residualValue,
+    valueLost,
+    // Hur värdeminskningskurvan kom till: om ett restvärde angetts och om det i så fall gick
+    // att nå (ett restvärde över inköpspriset är inte möjligt). rateMultiplier = kurvans
+    // justeringsfaktor mot standardkurvan (1 = oförändrad).
+    depreciationModel: {
+      rateMultiplier: depreciation.rateMultiplier,
+      calibrated: depreciation.calibrated,
+      feasible: depreciation.feasible,
+    },
+  };
 }
 
 /**
@@ -284,14 +351,13 @@ function findSurvivalAgeYears(survival, targetProbability) {
  * ägandetiden), så kapitalkostnaden speglar vald finansiering även för en hypotetisk ägare
  * vid den åldern.
  * @param {object} input - { price, months, financingMethod, assumptions }
- * @returns {{ ageYears: number[], monthlyCost: number[], riskMonthly: number[], components: object, purchaseAgeYears: number, endOfOwnershipAgeYears: number, survivalMilestones: object[] }}
+ * @returns {{ ageYears: number[], monthlyCost: number[], riskMonthly: number[], components: object, purchaseAgeYears: number, endOfOwnershipAgeYears: number, survivalMilestones: object[], depreciationModel: object }}
  */
 export function computeLifetimeMonthlyCosts({ price, months, financingMethod, assumptions }) {
-  const yearlyRates = assumptions.depreciation.yearlyRates;
-  const ageAtPurchaseMonths = Math.round((assumptions.ageAtPurchaseYears ?? 0) * 12);
-  const { baselineAnnualMileageKm, mileageWeight } = assumptions.vehicleAge;
-  const mileageRatio = assumptions.annualMileageKm / baselineAnnualMileageKm;
-  const ageRateMultiplier = mileageWeight * mileageRatio + (1 - mileageWeight);
+  // Samma (ev. restvärde-kalibrerade) värdeminskningskurva som i computeTco, så att
+  // livscykelkurvan och den jämförbara månadskostnaden bygger på samma antaganden.
+  const depreciationModel = resolveDepreciation({ price, months, assumptions });
+  const { yearlyRates, ageAtPurchaseMonths, ageRateMultiplier } = depreciationModel;
   const isLeasing = financingMethod === "leasing";
   const monthlyDiscountRate = annualToMonthlyRate(assumptions.discountRateAnnual);
 
@@ -407,5 +473,6 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
     purchaseAgeYears: ageAtPurchaseMonths / 12,
     endOfOwnershipAgeYears: (ageAtPurchaseMonths + months) / 12,
     survivalMilestones,
+    depreciationModel,
   };
 }

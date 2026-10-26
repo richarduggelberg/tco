@@ -1,4 +1,4 @@
-import { computeTco, computeLifetimeMonthlyCosts } from "../calc/tco.js";
+import { computeTco, computeLifetimeMonthlyCosts, resolveDepreciation } from "../calc/tco.js";
 import { impliedNewPrice } from "../calc/depreciation.js";
 import { defaultAssumptions, fuelTypeDefaults } from "../data/assumptions.js";
 import { formatCurrency, categoryLabels, formatThousands, parseThousands } from "./format.js";
@@ -9,9 +9,8 @@ const financingMethodSelect = document.getElementById("financingMethod");
 const billanFields = document.getElementById("billan-fields");
 const bolanFields = document.getElementById("bolan-fields");
 const leasingFields = document.getElementById("leasing-fields");
-const priceInput = document.getElementById("price");
-const ageAtPurchaseInput = document.getElementById("ageAtPurchase");
 const impliedNewPriceNote = document.getElementById("implied-newprice-note");
+const residualNote = document.getElementById("residual-note");
 
 const resultsSection = document.getElementById("results");
 const resultMonthlyEl = document.getElementById("result-monthly");
@@ -58,16 +57,85 @@ function updateVisibility() {
   leasingFields.classList.toggle("hidden", financingMethodSelect.value !== "leasing");
 }
 
-function updateImpliedNewPriceNote() {
-  const price = parseThousands(priceInput.value);
-  const ageYears = Number(ageAtPurchaseInput.value);
-  if (!ageYears || !price) {
+function showNote(element, text) {
+  element.textContent = text;
+  element.classList.remove("hidden");
+}
+
+/** Månader som en läsbar ålder/period i år, t.ex. 60 -> "5", 42 -> "3,5". */
+function formatYears(months) {
+  return (months / 12).toLocaleString("sv-SE", { maximumFractionDigits: 1 });
+}
+
+/** Uppdaterar de hjälptexter som beror på flera fält samtidigt (pris, restvärde, ålder m.m.). */
+function updateDerivedNotes() {
+  const input = readInputs();
+  updateImpliedNewPriceNote(input);
+  updateResidualNote(input);
+}
+
+/**
+ * Visar uppskattat nypris, beräknat med SAMMA värdeminskningskurva som kalkylen använder
+ * (dvs. inkl. ev. justerad takt och/eller restvärde-kalibrering).
+ */
+function updateImpliedNewPriceNote(input) {
+  if (!input.price || !input.assumptions.ageAtPurchaseYears || !input.months) {
     impliedNewPriceNote.classList.add("hidden");
     return;
   }
-  const newPrice = impliedNewPrice(price, Math.round(ageYears * 12), defaultAssumptions.depreciation.yearlyRates);
-  impliedNewPriceNote.textContent = `Uppskattat nypris (baklängesräknat från värdeminskningskurvan): ~${formatCurrency(newPrice)}`;
-  impliedNewPriceNote.classList.remove("hidden");
+  const { yearlyRates } = resolveDepreciation(input);
+  const newPrice = impliedNewPrice(input.price, Math.round(input.assumptions.ageAtPurchaseYears * 12), yearlyRates);
+  if (!Number.isFinite(newPrice)) {
+    impliedNewPriceNote.classList.add("hidden");
+    return;
+  }
+  showNote(impliedNewPriceNote, `Uppskattat nypris (baklängesräknat från värdeminskningskurvan): ~${formatCurrency(newPrice)}`);
+}
+
+/**
+ * Förklarar hur värdeminskningskurvan styrs: tomt restvärde = kurvan som den är (ev. justerad
+ * takt), angivet restvärde = kurvan kalibreras baklänges så att den landar på det värdet.
+ */
+function updateResidualNote(input) {
+  if (input.financingMethod === "leasing") {
+    showNote(residualNote, "Vid leasing ägs bilen av leasingbolaget - värdeminskning och restvärde används inte i kalkylen.");
+    return;
+  }
+  if (!input.price || !input.months) {
+    residualNote.classList.add("hidden");
+    return;
+  }
+
+  const model = resolveDepreciation(input);
+  const target = input.assumptions.depreciation.residualTarget;
+  const ratePercent = Math.round(model.rateMultiplier * 100);
+
+  if (!model.calibrated) {
+    showNote(
+      residualNote,
+      `Tomt: värdeminskningen följer modellens kurva (${ratePercent}% av standardtakten). ` +
+        "Fyll i ett restvärde du känner till för att låsa kurvan vid det värdet."
+    );
+    return;
+  }
+
+  if (!model.feasible) {
+    showNote(
+      residualNote,
+      target >= input.price
+        ? `Restvärdet (${formatCurrency(target)}) är högre än inköpspriset - ingen värdeminskning räknas, ` +
+            "bilen antas vara värd inköpspriset hela innehavstiden."
+        : `Restvärdet (${formatCurrency(target)}) går inte att nå med modellen - även en mycket brantare kurva ` +
+            "lämnar ett högre värde."
+    );
+    return;
+  }
+
+  showNote(
+    residualNote,
+    `Kurvan kalibreras baklänges så att bilen är värd ${formatCurrency(target)} efter ` +
+      `${formatYears(input.months)} år - det motsvarar ${ratePercent}% av standardvärdeminskningen.`
+  );
 }
 
 // Fält som fylls i automatiskt utifrån drivmedel. Vi kommer ihåg vilka fält användaren
@@ -106,8 +174,12 @@ function applyFuelTypeDefaults() {
 fuelTypeSelect.addEventListener("change", () => {
   updateVisibility();
   applyFuelTypeDefaults();
+  updateDerivedNotes();
 });
-financingMethodSelect.addEventListener("change", updateVisibility);
+financingMethodSelect.addEventListener("change", () => {
+  updateVisibility();
+  updateDerivedNotes();
+});
 
 // Formaterar om inköpspris-fältet med mellanslag som tusentalsavgränsare medan man skriver,
 // och återställer textmarkören till motsvarande siffer-position efter omformateringen.
@@ -131,11 +203,23 @@ function enableThousandsInput(id) {
   });
 }
 enableThousandsInput("price");
+enableThousandsInput("residualValue");
 
-priceInput.addEventListener("input", updateImpliedNewPriceNote);
-ageAtPurchaseInput.addEventListener("input", updateImpliedNewPriceNote);
+// Hjälptexterna (nypris, restvärde/kalibrering) beror på pris, restvärde, ålder, innehavstid
+// och körsträcka - uppdatera dem direkt när något av de fälten ändras.
+[
+  "price",
+  "residualValue",
+  "ageAtPurchase",
+  "holdingYears",
+  "annualMileage",
+  "baselineAnnualMileage",
+  "mileageWeight",
+  "depreciationMultiplier",
+].forEach((id) => document.getElementById(id)?.addEventListener("input", updateDerivedNotes));
+
 updateVisibility();
-updateImpliedNewPriceNote();
+updateDerivedNotes();
 
 // Chrome/Edge filter datalist suggestions to only those matching the current value, so a
 // field already holding e.g. "15000" only shows that one match instead of all presets.
@@ -155,6 +239,12 @@ function enableDatalistBrowsing(id) {
 }
 ["price", "ageAtPurchase", "holdingYears", "annualMileage"].forEach(enableDatalistBrowsing);
 
+/** Restvärdet från fältet, eller null när fältet är tomt (då används värdeminskningskurvan). */
+function readResidualTarget() {
+  const digits = document.getElementById("residualValue").value.replace(/\D/g, "");
+  return digits ? Number(digits) : null;
+}
+
 function readInputs() {
   const assumptions = JSON.parse(JSON.stringify(defaultAssumptions));
 
@@ -167,6 +257,12 @@ function readInputs() {
   assumptions.ageAtPurchaseYears = Number(document.getElementById("ageAtPurchase").value);
   assumptions.vehicleAge.baselineAnnualMileageKm = Number(document.getElementById("baselineAnnualMileage").value) * 10;
   assumptions.vehicleAge.mileageWeight = Number(document.getElementById("mileageWeight").value) / 100;
+
+  // Värdeminskningsmodellen: justerbar takt, och ett frivilligt restvärde som - om det anges -
+  // kalibrerar kurvan baklänges (se resolveDepreciation i calc/tco.js). Tomt fält = null.
+  const multiplierRaw = document.getElementById("depreciationMultiplier").value.trim();
+  assumptions.depreciation.rateMultiplier = multiplierRaw === "" ? 1 : Number(multiplierRaw) / 100;
+  assumptions.depreciation.residualTarget = readResidualTarget();
 
   assumptions.running.fuelType = fuelTypeSelect.value;
   assumptions.running.bensin.pricePerLiter = Number(document.getElementById("bensinPrice").value);
@@ -225,9 +321,16 @@ function renderResults(result, financingMethod) {
 
   // Restvärde och värdeminskning är bara relevant när man äger bilen själv (ej leasing).
   if (result.residualValue != null) {
+    // Anger användaren ett restvärde är det kurvan kalibrerats mot - visa det tydligt.
+    const calibrated = result.depreciationModel?.calibrated
+      ? " (enligt angivet restvärde)"
+      : "";
+    const impliedRate = result.depreciationModel?.calibrated && result.depreciationModel.feasible
+      ? ` · Värdeminskningstakt: ${Math.round(result.depreciationModel.rateMultiplier * 100)}% av standard`
+      : "";
     resultResidualEl.textContent =
-      `Restvärde efter ägandetiden: ${formatCurrency(result.residualValue)} ` +
-      `· Värdeminskning under ägandetiden: ${formatCurrency(result.valueLost)}`;
+      `Restvärde efter ägandetiden${calibrated}: ${formatCurrency(result.residualValue)} ` +
+      `· Värdeminskning under ägandetiden: ${formatCurrency(result.valueLost)}${impliedRate}`;
     resultResidualEl.classList.remove("hidden");
   } else {
     resultResidualEl.classList.add("hidden");

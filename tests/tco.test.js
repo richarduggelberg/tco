@@ -351,3 +351,134 @@ test("computeTco with leasing reports no residual value or value lost (the user 
   assert.equal(result.residualValue, null);
   assert.equal(result.valueLost, null);
 });
+
+test("computeTco: the depreciation multiplier speeds up or slows down the whole curve", () => {
+  const baseline = cloneAssumptions();
+  baseline.risk.enabled = false;
+  const resultBaseline = computeTco({ price: 300000, months: 60, financingMethod: "kontant", assumptions: baseline });
+
+  const faster = cloneAssumptions();
+  faster.risk.enabled = false;
+  faster.depreciation.rateMultiplier = 1.5;
+  const resultFaster = computeTco({ price: 300000, months: 60, financingMethod: "kontant", assumptions: faster });
+
+  const slower = cloneAssumptions();
+  slower.risk.enabled = false;
+  slower.depreciation.rateMultiplier = 0.5;
+  const resultSlower = computeTco({ price: 300000, months: 60, financingMethod: "kontant", assumptions: slower });
+
+  assert.ok(resultFaster.residualValue < resultBaseline.residualValue, "a steeper curve should leave a lower residual");
+  assert.ok(resultSlower.residualValue > resultBaseline.residualValue, "a flatter curve should leave a higher residual");
+  assert.ok(resultFaster.deterministicTotal > resultBaseline.deterministicTotal, "faster depreciation should cost more per month");
+  assert.ok(resultSlower.deterministicTotal < resultBaseline.deterministicTotal, "slower depreciation should cost less per month");
+  assert.equal(resultFaster.depreciationModel.calibrated, false);
+  assert.equal(resultFaster.depreciationModel.rateMultiplier, 1.5);
+});
+
+test("computeTco: an explicit residual target is calibrated backwards onto the depreciation curve", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = false;
+  assumptions.depreciation.residualTarget = 120000;
+  const result = computeTco({ price: 300000, months: 60, financingMethod: "kontant", assumptions });
+
+  assert.ok(Math.abs(result.residualValue - 120000) < 0.01, `expected the residual to be exactly 120000, got ${result.residualValue}`);
+  assert.ok(Math.abs(result.valueLost - 180000) < 0.01, "value lost should be price minus the target residual");
+  assert.equal(result.depreciationModel.calibrated, true);
+  assert.equal(result.depreciationModel.feasible, true);
+
+  const baseline = cloneAssumptions();
+  baseline.risk.enabled = false;
+  const resultBaseline = computeTco({ price: 300000, months: 60, financingMethod: "kontant", assumptions: baseline });
+  // 120000 is below the model's own residual for this car, so the curve must be steeper
+  assert.ok(result.depreciationModel.rateMultiplier > 1, "a lower-than-model residual needs a steeper curve");
+  assert.ok(result.deterministicTotal > resultBaseline.deterministicTotal, "more forced depreciation should cost more per month");
+});
+
+test("computeTco: a residual target above the model's own residual flattens the curve", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = false;
+  assumptions.depreciation.residualTarget = 220000;
+  const result = computeTco({ price: 300000, months: 60, financingMethod: "kontant", assumptions });
+
+  assert.ok(Math.abs(result.residualValue - 220000) < 0.01);
+  assert.ok(result.depreciationModel.rateMultiplier < 1, "a higher-than-model residual needs a flatter curve");
+});
+
+test("computeTco: a residual target above the purchase price is infeasible and yields no depreciation", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = false;
+  assumptions.depreciation.residualTarget = 400000;
+  const result = computeTco({ price: 300000, months: 60, financingMethod: "kontant", assumptions });
+
+  assert.equal(result.depreciationModel.calibrated, true);
+  assert.equal(result.depreciationModel.feasible, false);
+  assert.equal(result.residualValue, 300000);
+  assert.equal(result.valueLost, 0);
+  assert.ok(Math.abs(result.categoryMonthly.depreciation) < 1e-9, "no depreciation should be charged");
+});
+
+test("computeTco: the residual target wins over the manual depreciation multiplier", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = false;
+  assumptions.depreciation.rateMultiplier = 3;
+  assumptions.depreciation.residualTarget = 150000;
+  const result = computeTco({ price: 300000, months: 60, financingMethod: "kontant", assumptions });
+  assert.ok(Math.abs(result.residualValue - 150000) < 0.01);
+  assert.ok(result.depreciationModel.rateMultiplier < 3, "the target should override the manual multiplier");
+});
+
+test("computeTco: no residual target and no multiplier behaves exactly like the standard curve", () => {
+  const implicit = cloneAssumptions();
+  implicit.risk.enabled = false;
+  delete implicit.depreciation.rateMultiplier;
+  delete implicit.depreciation.residualTarget;
+
+  const explicit = cloneAssumptions();
+  explicit.risk.enabled = false;
+  explicit.depreciation.rateMultiplier = 1;
+  explicit.depreciation.residualTarget = null;
+
+  const input = { price: 300000, months: 60, financingMethod: "billan", assumptions: implicit };
+  const resultImplicit = computeTco(input);
+  const resultExplicit = computeTco({ ...input, assumptions: explicit });
+
+  assert.equal(resultImplicit.residualValue, resultExplicit.residualValue);
+  assert.equal(resultImplicit.deterministicTotal, resultExplicit.deterministicTotal);
+  assert.equal(resultImplicit.depreciationModel.calibrated, false);
+});
+
+test("computeTco: a zero or negative residual target is treated as 'not provided'", () => {
+  for (const target of [0, -1000, null]) {
+    const assumptions = cloneAssumptions();
+    assumptions.risk.enabled = false;
+    assumptions.depreciation.residualTarget = target;
+    const result = computeTco({ price: 300000, months: 60, financingMethod: "kontant", assumptions });
+    assert.equal(result.depreciationModel.calibrated, false, `target ${target} should not calibrate`);
+    assert.equal(result.depreciationModel.rateMultiplier, 1);
+  }
+});
+
+test("computeTco: a residual target is honoured with the risk simulation on (calibration applies to every simulated path)", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = true;
+  assumptions.risk.numSimulations = 200;
+  assumptions.depreciation.residualTarget = 100000;
+  const result = computeTco({ price: 300000, months: 120, financingMethod: "kontant", assumptions });
+  assert.ok(Math.abs(result.residualValue - 100000) < 0.01, `expected 100000, got ${result.residualValue}`);
+  assert.ok(result.risk.riskPremium > -1, "calibration should not make the risk premium negative");
+});
+
+test("computeLifetimeMonthlyCosts uses the same calibrated curve as computeTco (residual on the value path)", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.depreciation.residualTarget = 100000;
+  const input = { price: 300000, months: 60, financingMethod: "kontant", assumptions };
+  const tco = computeTco({ ...input, assumptions: { ...assumptions, risk: { ...assumptions.risk, enabled: false } } });
+  const lifetime = computeLifetimeMonthlyCosts(input);
+
+  assert.equal(lifetime.depreciationModel.calibrated, true);
+  assert.ok(
+    Math.abs(lifetime.depreciationModel.rateMultiplier - tco.depreciationModel.rateMultiplier) < 1e-9,
+    "both entry points should solve for the same curve"
+  );
+  assert.ok(Math.abs(tco.residualValue - 100000) < 0.01);
+});

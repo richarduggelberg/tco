@@ -19,6 +19,13 @@ export const defaultAssumptions = {
   // Värdeminskning (årlig, appliceras stegvis - år 1 störst, avtar sedan)
   depreciation: {
     yearlyRates: [0.20, 0.15, 0.12, 0.10, 0.10, 0.08, 0.08, 0.08, 0.08, 0.08], // år 1..10, år 11+ använder sista värdet
+    // Justeringsfaktor på kurvan ovan (1 = standard, 1.3 = 30% snabbare värdetapp, 0.7 = långsammare).
+    // Alla bilar värdeminskar inte i samma takt (märke/modell, efterfrågan, skick) - används när
+    // inget restvärde är angett.
+    rateMultiplier: 1,
+    // Önskat restvärde (kr) vid ägandeperiodens slut. När det är satt (inte null/0) löses
+    // rateMultiplier BAKLÄNGES så att värdeminskningskurvan landar exakt på detta värde.
+    residualTarget: null,
   },
 
   // Finansiering

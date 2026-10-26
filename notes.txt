@@ -7,6 +7,24 @@ Lifetime chart (bottom graph), stacked components:
 - Outside the ownership window the capital cost reflects the chosen financing method
   (except leasing, which only exists during ownership), instead of falling back to cash.
 
+Depreciation model: rate multiplier + optional restvärde (residual value):
+- "Värdeminskningstakt (% av standard)" under Avancerat scales the whole yearly-rate curve
+  (100 = standard, 150 = 50% faster value loss). It is applied to depreciation AND to the
+  value used by the haveri-risk total-loss check, since both read the same curve.
+- "Restvärde efter innehavstiden (kr)" (next to Inköpspris) is optional. When filled in, the
+  multiplier is solved BACKWARDS (bisection in solveRateMultiplierForResidual) so that the
+  curve lands exactly on that residual at the end of the holding period. The residual field
+  wins over the multiplier field; the solved percentage is shown in the result line and in a
+  note under the field. Empty field (or 0/negative) = the model's own curve is used.
+- A residual above the purchase price is impossible (it would need negative depreciation):
+  it degrades to "no depreciation" (multiplier 0) and the note says so.
+- Deliberate choice: the solved multiplier scales the WHOLE life curve, including the backward
+  extrapolation before the purchase. So entering a residual also moves the estimated nypris
+  shown for a used car (and the pre-purchase part of the lifetime chart). The alternative -
+  calibrating only inside the ownership window - would create a kink at the purchase month and
+  make the lifetime curve inconsistent with the TCO calculation.
+- Leasing ignores both (the leasing company carries the depreciation), which the note says.
+
 Known caveats / not done:
 - Boundary step: for an amortizing billån there is a small upward step at the "Säljs"
   line. Inside the ownership window the capital cost follows the actual (paid-down) loan,

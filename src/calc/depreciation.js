@@ -85,3 +85,83 @@ export function buildValueSeries(initialValue, months, yearlyRates, resetMonths 
   }
   return series;
 }
+
+/** Högsta tillåtna årsvärdeminskningstakt efter justering (undviker att 1 - rate blir <= 0). */
+const MAX_EFFECTIVE_ANNUAL_RATE = 0.99;
+
+/**
+ * Skalar värdeminskningskurvan med en konstant faktor. Alla bilar värdeminskar inte i samma
+ * takt, så användaren kan snabba på eller bromsa HELA kurvan (t.ex. 1.5 = 50% snabbare
+ * värdetapp, 0.7 = 30% långsammare) istället för att redigera varje årstakt.
+ * @param {number[]} yearlyRates - Basens årliga värdeminskningstakter
+ * @param {number} rateMultiplier - 0 = ingen värdeminskning, 1 = standardkurvan
+ * @returns {number[]} Justerade årstakter
+ */
+export function scaledYearlyRates(yearlyRates, rateMultiplier = 1) {
+  if (!(rateMultiplier >= 0) || rateMultiplier === 1) return yearlyRates;
+  return yearlyRates.map((rate) => Math.min(Math.max(rate * rateMultiplier, 0), MAX_EFFECTIVE_ANNUAL_RATE));
+}
+
+/** Bilens värde vid slutet av en period om `months` månader, givet en viss kurva. */
+function valueAfterMonths(initialValue, months, yearlyRates, ageAtPurchaseMonths, ageRateMultiplier) {
+  const series = buildValueSeries(initialValue, months, yearlyRates, [], ageAtPurchaseMonths, ageRateMultiplier);
+  return series[months];
+}
+
+/**
+ * Räknar BAKLÄNGES från ett önskat restvärde till den justeringsfaktor på värdeminsknings-
+ * kurvan som ger exakt det restvärdet vid ägandeperiodens slut. Kurvan behåller sin form
+ * (dyrast värdetapp tidigt, flackare senare) men blir brantare eller flackare som helhet.
+ *
+ * Värdet vid periodens slut är monotont avtagande i faktorn, så lösningen tas fram med
+ * bisektion: faktor 0 ger inköpspriset kvar, och ju högre faktor desto närmare noll går värdet.
+ *
+ * @param {object} input
+ * @param {number} input.initialValue - Inköpspris (bilens värde vid köpet)
+ * @param {number} input.months - Ägandeperiodens längd i månader
+ * @param {number[]} input.yearlyRates - Basens årliga värdeminskningstakter
+ * @param {number} input.targetResidual - Önskat restvärde (kr) vid periodens slut
+ * @param {number} [input.ageAtPurchaseMonths] - Bilens kalenderålder vid köpet
+ * @param {number} [input.ageRateMultiplier] - Körsträcke-viktad åldringsfaktor (1 = normalt)
+ * @param {number} [input.maxMultiplier] - Tak för hur brant kurvan får bli
+ * @returns {{rateMultiplier: number, feasible: boolean, residualValue: number}} Lösningen,
+ *   om målet gick att nå och vilket restvärde kurvan faktiskt ger (samma som målet när
+ *   `feasible` är true)
+ */
+export function solveRateMultiplierForResidual({
+  initialValue,
+  months,
+  yearlyRates,
+  targetResidual,
+  ageAtPurchaseMonths = 0,
+  ageRateMultiplier = 1,
+  maxMultiplier = 100,
+}) {
+  const valueAt = (rateMultiplier) =>
+    valueAfterMonths(initialValue, months, scaledYearlyRates(yearlyRates, rateMultiplier), ageAtPurchaseMonths, ageRateMultiplier);
+
+  if (!(targetResidual > 0) || !(initialValue > 0) || !(months > 0)) {
+    return { rateMultiplier: 1, feasible: false, residualValue: valueAt(1) };
+  }
+  // Ett restvärde över inköpspriset skulle kräva negativ värdeminskning (bilen blir värd mer).
+  if (targetResidual >= initialValue) {
+    return { rateMultiplier: 0, feasible: false, residualValue: valueAt(0) };
+  }
+
+  let lo = 0; // valueAt(lo) >= target (vid 0 är värdet kvar = inköpspriset)
+  let hi = 1;
+  while (hi < maxMultiplier && valueAt(hi) > targetResidual) hi *= 2;
+  hi = Math.min(hi, maxMultiplier);
+  if (valueAt(hi) > targetResidual) {
+    // Även den brantaste tillåtna kurvan lämnar ett värde över målet - använd den ändå.
+    return { rateMultiplier: hi, feasible: false, residualValue: valueAt(hi) };
+  }
+
+  for (let i = 0; i < 80; i++) {
+    const mid = (lo + hi) / 2;
+    if (valueAt(mid) > targetResidual) lo = mid;
+    else hi = mid;
+  }
+  const rateMultiplier = (lo + hi) / 2;
+  return { rateMultiplier, feasible: true, residualValue: valueAt(rateMultiplier) };
+}
