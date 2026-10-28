@@ -40,3 +40,11 @@ export const categoryLabels = {
   tires: "Däck (vinter/sommar)",
   depreciation: "Värdeminskning",
 };
+
+/** Svenska namn på finansieringssätten, för jämförelsen i resultatet. */
+export const financingLabels = {
+  kontant: "Kontantköp",
+  billan: "Billån",
+  bolan: "Bolån",
+  leasing: "Privatleasing",
+};

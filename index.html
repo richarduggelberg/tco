@@ -71,6 +71,10 @@
             <input type="number" id="leasingFirstPayment" value="0" min="0" step="any">
           </div>
           <div>
+            <label for="leasingPriceRatio">Antaget bilpris per kr/mån (×)</label>
+            <input type="number" id="leasingPriceRatio" value="100" min="1" step="any">
+          </div>
+          <div>
             <label for="leasingServiceIncluded">Service ingår i avgiften</label>
             <select id="leasingServiceIncluded">
               <option value="true" selected>Ja</option>
@@ -85,12 +89,13 @@
             </select>
           </div>
         </div>
-        <p class="note">Fyll i en verklig leasingofferta (t.ex. från en återförsäljare eller en jämförelsesajt). Vid leasing äger du aldrig bilen - restvärde och haveririsk bärs av leasingbolaget och visas därför inte i uppdelningen nedan. Fordonsskatt ingår normalt INTE i leasingavgiften och visas därför alltid separat.</p>
+        <p class="note">Fyll i en verklig leasingofferta (t.ex. från en återförsäljare eller en jämförelsesajt). Vid leasing äger du aldrig bilen - restvärde och haveririsk bärs av leasingbolaget och visas därför inte i uppdelningen nedan. Fordonsskatt ingår normalt INTE i leasingavgiften och visas därför alltid separat. Inköpspriset är inte känt för en leasingbil, så det antas utifrån avgiften (avgiften × faktorn ovan) - eller utifrån ett angivet nypris. Antagandet används i livscykeldiagrammet och i jämförelsen mellan finansieringssätten.</p>
+        <p class="note hidden" id="leasing-price-note"></p>
       </fieldset>
 
       <h2>Fordon &amp; användning</h2>
       <div class="grid">
-        <div>
+        <div id="price-field">
           <label for="price">Inköpspris (kr)</label>
           <input type="text" inputmode="numeric" id="price" value="300 000" list="price-options" required>
           <datalist id="price-options">
@@ -363,6 +368,7 @@
         <div class="value" id="result-monthly">–</div>
         <div class="risk-interval" id="result-interval"></div>
         <div class="residual-note hidden" id="result-residual"></div>
+        <div class="comparison-note hidden" id="result-comparison"></div>
       </div>
 
       <div class="card">
@@ -384,9 +390,13 @@
           service, däck, värdeminskning, kapitalkostnad och förväntad haveririsk) staplade ovanpå
           varandra, med totalkostnaden som den heldragna linjen överst. Under din egen markerade
           ägandeperiod används din valda finansieringsmetod; utanför ägandeperioden antas samma
-          finansieringsmetod gälla för en ägare av bilen vid den åldern - utom vid leasing, där
-          värdeminskning, kapitalkostnad och risk istället bärs av leasingbolaget under din period
-          och kurvan utanför visar ett kontantköp. Sannolikheten för ett dyrt haveri/totalhaveri ökar
+          finansieringsmetod gälla för en ägare av bilen vid den åldern. Vid privatleasing visas i
+          stället ett kontantköp som bas (så att alternativen går att jämföra), och leasingens
+          månadskostnad ritas som en streckad linje under din ägandeperiod: avgiften plus allt som
+          inte ingår i den (bränsle/el, fordonsskatt, försäkring samt service och däck om de inte är
+          inbakade i avgiften). Haveririsken bär leasingbolaget och ingår därför inte i den linjen.
+          Bilens pris vid leasing antas utifrån avgiften, se fältet ovan.
+          Sannolikheten för ett dyrt haveri/totalhaveri ökar
           med åldern, och vid ett totalhaveri antas bilen ersättas med en likvärdig bil till samma pris
           som angetts ovan, vilket gör att totalkostnaden kan börja stiga igen vid hög ålder trots att
           värdeminskningen då är låg. De blå linjerna markerar vid vilken ålder sannolikheten att bilen

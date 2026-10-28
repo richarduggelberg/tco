@@ -54,6 +54,12 @@ export const defaultAssumptions = {
       firstPaymentExtra: 0, // "Förhöjd leasingavgift" vid tecknande, om tillämpligt
       serviceIncluded: true, // Vanligt i privatleasingerbjudanden - fordonsskatt ingår dock normalt INTE
       winterTiresIncluded: false, // Vissa leasingavtal inkluderar vinterdäck/hjulårsförvaring
+      // Vid leasing döljs inköpspriset (en leasingoffert gäller normalt en ny bil, och avgiften är
+      // det man utgår från). Bilens pris antas då vara monthlyFee * denna faktor: 100 => en
+      // avgift på 3 000 kr/mån motsvarar en bil för ca 300 000 kr. Används i livscykeldiagrammet
+      // och i jämförelsen mellan finansieringssätten, om inget nypris angetts (som då är samma
+      // sak som bilens pris och används i stället).
+      priceToFeeRatio: 100,
     },
   },
 

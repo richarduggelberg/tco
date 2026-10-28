@@ -146,6 +146,15 @@ details summary {
   margin-top: 0.4rem;
 }
 
+.comparison-note {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.82rem;
+  margin-top: 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border);
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

@@ -53,6 +53,44 @@ Edge cases (all covered by tests):
   is hidden, and a value left in the input is dropped in readInputs.
 - Leasing ignores all three (the leasing company carries the depreciation), which the note says.
 
+Leasing: price assumption, comparison line and the chart
+- Inköpspris is hidden while Privatleasing is selected, because it is not known for a leased car.
+  The price is instead assumed to be leasingavgift * financing.leasing.priceToFeeRatio (100 =>
+  3000 kr/month is a car for about 300 000 kr, as asked for). An entered nypris wins over the
+  fee assumption - for a new car it is the same thing, and the ratio is only a proxy.
+- resolveVehiclePrice() is the single place that decides the price and reports where it came from
+  ("input" / "nypris" / "leasingavgift"), so the chart, the comparison and the notes agree.
+- A nypris entered while leasing is used as the PRICE, so assumptionsForMethod() blanks it before
+  resolving the curve - otherwise the curve would try to calibrate a history from the price to
+  itself and report "infeasible".
+- The leasing TCO number itself is unaffected by all of this: leasingCashflow is fee-driven and
+  never reads the price, so the assumption only changes the chart and the comparison.
+
+Lifetime chart while leasing: cash purchase as the base, leasing as a dotted line
+- The stacked base curve is now a KONTANTKÖP (using the assumed price) instead of zeroing
+  depreciation/capital cost/risk inside the window, so the two alternatives can be compared
+  directly. Verified: the base is bit-identical to a standalone kontant run at that price.
+- leasingMonthlyCost is the dotted line, only inside the ownership window: the fee (plus
+  firstPaymentExtra in the first month) plus everything the fee does not include - bränsle/el,
+  fordansskatt, försäkring, and service/däck when they are not bundled. The haveri risk is the
+  leasing company's, so it is excluded.
+- The "leasingavgift" component no longer exists in the stacked curve (the fee is no longer part
+  of it); the line carries it instead.
+
+Comparison of the financing methods in the result
+- computeTco returns comparison: one row per other method (never the selected one), with the same
+  statistic as the headline (risk mean when risk is on, otherwise the deterministic total), so the
+  numbers are comparable rather than apples-to-oranges.
+- The Monte Carlo is financing-independent (same paths, same value series), so it is simulated ONCE
+  in computeTco and reused for every method: only the equity/loan/npv arithmetic is redone per
+  method. Measured at 20 years/3000 sims the per-path evaluation costs ~789 ms while the
+  simulation itself is only ~58 ms, so simulating per method would have cost ~4x for no gain.
+  computeTco(..., { compareMethods: false }) skips the rows entirely (used by the test that the
+  comparison does not disturb the primary result).
+- Caveat: the leasing row is computed from the leasing fieldset, which is hidden unless leasing is
+  selected. Comparing with leasing without selecting it therefore uses the default 4500 kr/month
+  fee - select leasing and enter a real offer for a meaningful comparison.
+
 Known caveats / not done:
 - Boundary step: for an amortizing billån there is a small upward step at the "Säljs"
   line. Inside the ownership window the capital cost follows the actual (paid-down) loan,

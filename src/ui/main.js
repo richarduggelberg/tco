@@ -1,6 +1,6 @@
-import { computeTco, computeLifetimeMonthlyCosts, resolveDepreciation, assessPurchasePrice, modelImpliedNewPrice } from "../calc/tco.js";
+import { computeTco, computeLifetimeMonthlyCosts, resolveDepreciation, resolveVehiclePrice, assessPurchasePrice, modelImpliedNewPrice } from "../calc/tco.js";
 import { defaultAssumptions, fuelTypeDefaults } from "../data/assumptions.js";
-import { formatCurrency, categoryLabels, formatThousands, parseThousands } from "./format.js";
+import { formatCurrency, categoryLabels, financingLabels, formatThousands, parseThousands } from "./format.js";
 
 const form = document.getElementById("tco-form");
 const fuelTypeSelect = document.getElementById("fuelType");
@@ -13,6 +13,9 @@ const residualNote = document.getElementById("residual-note");
 const newPriceField = document.getElementById("newprice-field");
 const newPriceNote = document.getElementById("nypris-note");
 const verdictNote = document.getElementById("purchase-verdict");
+const priceField = document.getElementById("price-field");
+const leasingPriceNote = document.getElementById("leasing-price-note");
+const comparisonNote = document.getElementById("result-comparison");
 
 const resultsSection = document.getElementById("results");
 const resultMonthlyEl = document.getElementById("result-monthly");
@@ -54,9 +57,13 @@ const verticalMarkerPlugin = {
 };
 
 function updateVisibility() {
+  const isLeasing = financingMethodSelect.value === "leasing";
   billanFields.classList.toggle("hidden", financingMethodSelect.value !== "billan");
   bolanFields.classList.toggle("hidden", financingMethodSelect.value !== "bolan");
-  leasingFields.classList.toggle("hidden", financingMethodSelect.value !== "leasing");
+  leasingFields.classList.toggle("hidden", !isLeasing);
+  // Inköpspriset är inte känt vid leasing - priset antas då utifrån leasingavgiften (se
+  // resolveVehiclePrice i calc/tco.js), så fältet visas inte.
+  priceField.classList.toggle("hidden", isLeasing);
 }
 
 function showNote(element, text) {
@@ -77,6 +84,27 @@ function updateDerivedNotes() {
   updateNewPriceNote(input);
   updateResidualNote(input);
   updatePurchaseVerdict(input);
+  updateLeasingPriceNote(input);
+}
+
+/**
+ * Visar vilket pris kalkylen utgår från vid leasing, eftersom inköpspriset då är dolt: antingen
+ * ett angivet nypris eller leasingavgiften * faktorn.
+ */
+function updateLeasingPriceNote(input) {
+  if (input.financingMethod !== "leasing") {
+    leasingPriceNote.classList.add("hidden");
+    return;
+  }
+  const { price, source } = resolveVehiclePrice(input);
+  const { monthlyFee, priceToFeeRatio } = input.assumptions.financing.leasing;
+  showNote(
+    leasingPriceNote,
+    source === "nypris"
+      ? `Bilens pris i kalkylen = nypriset du angett: ${formatCurrency(price)}.`
+      : `Inköpspriset är dolt vid leasing. Antaget pris: ${formatCurrency(price)} ` +
+          `(${formatCurrency(monthlyFee)}/mån × ${priceToFeeRatio}). Justera faktorn ovan om sambandet inte stämmer.`
+  );
 }
 
 /** Nyprisfältet är bara relevant för en bil som inte var ny vid köpet (då är nypris = inköpspris). */
@@ -120,11 +148,18 @@ function updateImpliedNewPriceNote(input) {
  */
 function updateNewPriceNote(input) {
   const newPrice = input.assumptions.depreciation.newPrice;
+  const isLeasing = input.financingMethod === "leasing";
   if (!newPrice) {
     showNote(
       newPriceNote,
-      "Tomt: modellens kurva används. Fyll i bilens nypris för att i stället kalibrera kurvan mot bilens faktiska värdetapp sedan ny."
+      isLeasing
+        ? "Tomt: bilens pris antas då utifrån leasingavgiften (se Privatleasing ovan). Fyll i nypriset om du känner till det - det används då som bilens pris."
+        : "Tomt: modellens kurva används. Fyll i bilens nypris för att i stället kalibrera kurvan mot bilens faktiska värdetapp sedan ny."
     );
+    return;
+  }
+  if (isLeasing) {
+    showNote(newPriceNote, `Vid leasing används nypriset som bilens pris i kalkylen: ${formatCurrency(newPrice)}.`);
     return;
   }
   const ageMonths = input.assumptions.ageAtPurchaseYears * 12;
@@ -175,6 +210,12 @@ function updateNewPriceNote(input) {
  * faktiskt kostade. Kräver både nypris och restvärde.
  */
 function updatePurchaseVerdict(input) {
+  // Vid leasing köper man ingen bil - priset är antaget, så det finns inget betalt pris att
+  // bedöma. (Jämförelsen mellan finansieringssätten visas i stället i resultatet.)
+  if (input.financingMethod === "leasing") {
+    verdictNote.classList.add("hidden");
+    return;
+  }
   const assessment = assessPurchasePrice(input);
   if (!assessment) {
     verdictNote.classList.add("hidden");
@@ -315,8 +356,8 @@ enableThousandsInput("price");
 enableThousandsInput("residualValue");
 enableThousandsInput("newPrice");
 
-// Hjälptexterna (nypris, restvärde/kalibrering) beror på pris, restvärde, ålder, innehavstid
-// och körsträcka - uppdatera dem direkt när något av de fälten ändras.
+// Hjälptexterna (nypris, restvärde/kalibrering, antaget leasingpris) beror på flera fält -
+// uppdatera dem direkt när något av dem ändras.
 [
   "price",
   "residualValue",
@@ -327,6 +368,8 @@ enableThousandsInput("newPrice");
   "baselineAnnualMileage",
   "mileageWeight",
   "depreciationMultiplier",
+  "leasingFee",
+  "leasingPriceRatio",
 ].forEach((id) => document.getElementById(id)?.addEventListener("input", updateDerivedNotes));
 
 updateVisibility();
@@ -412,6 +455,8 @@ function readInputs() {
   assumptions.financing.bolan.downPaymentRatio = Number(document.getElementById("bolanDownPayment").value) / 100;
   assumptions.financing.bolan.interestRateAnnual = Number(document.getElementById("bolanRate").value) / 100;
   assumptions.financing.leasing.monthlyFee = Number(document.getElementById("leasingFee").value);
+  const priceRatioRaw = Number(document.getElementById("leasingPriceRatio").value);
+  assumptions.financing.leasing.priceToFeeRatio = priceRatioRaw > 0 ? priceRatioRaw : 100;
   assumptions.financing.leasing.firstPaymentExtra = Number(document.getElementById("leasingFirstPayment").value);
   assumptions.financing.leasing.serviceIncluded = document.getElementById("leasingServiceIncluded").value === "true";
   assumptions.financing.leasing.winterTiresIncluded = document.getElementById("leasingWinterTires").value === "true";
@@ -443,7 +488,6 @@ function renderResults(result, financingMethod) {
 
   // Restvärde och värdeminskning är bara relevant när man äger bilen själv (ej leasing).
   if (result.residualValue != null) {
-    // Anger användaren ett restvärde är det kurvan kalibrerats mot - visa det tydligt.
     const calibrated = result.depreciationModel?.calibrated
       ? " (enligt angivet restvärde)"
       : "";
@@ -456,6 +500,23 @@ function renderResults(result, financingMethod) {
     resultResidualEl.classList.remove("hidden");
   } else {
     resultResidualEl.classList.add("hidden");
+  }
+
+  // Jämförelse med de andra finansieringssätten, räknade med samma antaganden och samma
+  // riskbanor (så att siffrorna är jämförbara med månadskostnaden ovan).
+  if (result.comparison?.length) {
+    const rows = result.comparison.map(
+      (row) => `${financingLabels[row.method] ?? row.method} ${formatCurrency(row.monthlyCost)}`
+    );
+    const assumedPrice =
+      result.priceSource === "leasingavgift"
+        ? ` Övriga sätt är räknade på det antagna priset ${formatCurrency(result.vehiclePrice)}.`
+        : "";
+    comparisonNote.textContent =
+      `Andra finansieringssätt, kr/mån: ${rows.join(" · ")}.${assumedPrice}`;
+    comparisonNote.classList.remove("hidden");
+  } else {
+    comparisonNote.classList.add("hidden");
   }
 
   breakdownBody.innerHTML = "";
@@ -518,8 +579,39 @@ const lifetimeComponentStyles = [
   { key: "depreciation", label: categoryLabels.depreciation, color: "#f87171" },
   { key: "capitalCost", label: categoryLabels.kapitalkostnad, color: "#38bdf8" },
   { key: "risk", label: "Haveririsk (förväntad)", color: "#fb923c" },
-  { key: "leasing", label: categoryLabels.leasingavgift, color: "#a78bfa" },
 ];
+
+/** Färg för leasingens kostnadskurva (streckad linje, inte staplad). */
+const leasingLineColor = "#7c3aed";
+
+/**
+ * Leasingkostnaden (avgiften plus allt som inte ingår i den) som en egen streckad linje under
+ * ägandeperioden, så att den går att jämföra med kontantköpskruvan. Utanför ägandeperioden finns
+ * ingen leasing, och då lämnas linjen tom.
+ */
+function buildLeasingDataset(lifetime) {
+  const cost = lifetime.leasingMonthlyCost;
+  if (!cost?.some((value) => Math.abs(value) > 0.5)) return null;
+  const firstMonth = Math.round(lifetime.purchaseAgeYears * 12) + 1;
+  const lastMonth = Math.round(lifetime.endOfOwnershipAgeYears * 12);
+  const data = [];
+  for (let t = firstMonth; t <= lastMonth; t++) {
+    data.push({ x: lifetime.ageYears[t - 1], y: Math.round(cost[t]) });
+  }
+  return {
+    label: "Privatleasing (avgift + ej ingående kostnader)",
+    data,
+    borderColor: leasingLineColor,
+    backgroundColor: leasingLineColor,
+    borderDash: [7, 5],
+    fill: false,
+    pointRadius: 0,
+    borderWidth: 2,
+    tension: 0.1,
+    // Egen stack = ritas från axeln, inte ovanpå kostnadsstaplarna.
+    stack: "leasing",
+  };
+}
 
 function renderLifetimeChart(input) {
   const lifetime = computeLifetimeMonthlyCosts(input);
@@ -560,9 +652,10 @@ function renderLifetimeChart(input) {
   }));
 
   if (lifetimeChartInstance) lifetimeChartInstance.destroy();
+  const leasingDataset = buildLeasingDataset(lifetime);
   lifetimeChartInstance = new Chart(lifetimeChartCanvas, {
     type: "line",
-    data: { datasets: [totalDataset, ...componentDatasets] },
+    data: { datasets: [totalDataset, ...componentDatasets, ...(leasingDataset ? [leasingDataset] : [])] },
     options: {
       interaction: { mode: "index", intersect: false },
       plugins: {
