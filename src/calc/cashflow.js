@@ -17,19 +17,6 @@ export function buildSeriesFromFunction(months, costFn) {
   return series;
 }
 
-/**
- * Bygger en kassaflödesserie med en återkommande klumpsummekostnad var `intervalMonths`:e
- * månad (t.ex. byte av däckuppsättning). Ingen kostnad om intervallet eller kostnaden är 0.
- */
-export function buildPeriodicCostSeries(months, intervalMonths, cost) {
-  const series = new Array(months + 1).fill(0);
-  if (!intervalMonths || intervalMonths <= 0 || !cost) return series;
-  for (let t = intervalMonths; t <= months; t += intervalMonths) {
-    series[t] -= cost;
-  }
-  return series;
-}
-
 /** Bygger en kassaflödesserie där restvärdet betalas ut (positivt) vid periodens sista månad. */
 export function buildResidualSeries(months, residualValue) {
   const series = new Array(months + 1).fill(0);

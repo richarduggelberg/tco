@@ -5,7 +5,6 @@ import { presentValue, levelMonthlyPayment, annualToMonthlyRate } from "./npv.js
 import {
   buildConstantSeries,
   buildSeriesFromFunction,
-  buildPeriodicCostSeries,
   sumSeries,
   computeEnergyMonthly,
 } from "./cashflow.js";
@@ -208,6 +207,25 @@ function taxMonthlyCost(calendarAgeYears, tax) {
 }
 
 /**
+ * Månadskostnad för bilens däcksuppsättningar, utslagen jämnt över bytesintervallet (en
+ * uppsättning var winterIntervalYears/summerIntervalYears år). Däcken förbrukas i samma takt
+ * oavsett hur länge bilen ägs, så kostnaden periodiseras över däckens livslängd i stället för att
+ * belasta den månad de byts: en innehavstid kortare än intervallet ska inte ge noll däckkostnad.
+ * Samma siffra används i TCO-kalkylen och i livscykelkurvan.
+ * @param {object} assumptions
+ * @returns {{winter: number, summer: number}} kr/månad per uppsättning
+ */
+function tireMonthlyCosts(assumptions) {
+  const { setCost, winterIntervalYears, summerIntervalYears } = assumptions.tires;
+  const winterIntervalMonths = Math.round(winterIntervalYears * 12);
+  const summerIntervalMonths = Math.round(summerIntervalYears * 12);
+  return {
+    winter: winterIntervalMonths > 0 ? setCost / winterIntervalMonths : 0,
+    summer: summerIntervalMonths > 0 ? setCost / summerIntervalMonths : 0,
+  };
+}
+
+/**
  * Bilens pris som kalkylen ska utgå från. Vid privatleasing döljs inköpspriset i UI:t: en
  * leasingoffert gäller normalt en ny bil och avgiften är det man utgår från, så priset antas
  * vara leasingavgiften * priceToFeeRatio (100 => 3 000 kr/mån motsvarar ca 300 000 kr) om
@@ -266,11 +284,12 @@ function methodResult({ financingMethod, price, months, assumptions, monthlyDisc
   );
   const service = buildConstantSeries(months, serviceBundled ? 0 : assumptions.running.serviceMonthly);
 
-  const winterTires = winterTiresBundled
-    ? buildPeriodicCostSeries(months, 0, 0)
-    : buildPeriodicCostSeries(months, Math.round(assumptions.tires.winterIntervalYears * 12), assumptions.tires.setCost);
-  const summerTires = buildPeriodicCostSeries(months, Math.round(assumptions.tires.summerIntervalYears * 12), assumptions.tires.setCost);
-  const tires = sumSeries([winterTires, summerTires]);
+  // Däcken periodiseras jämnt över bytesintervallet (se tireMonthlyCosts) i stället för att slås
+  // ut som en klumpsumma vid varje byte. Samma månadssnitt används i livscykelkurvan, så
+  // uppdelningen, TCO:n och grafen visar samma däckkostnad - även för en innehavstid som är
+  // kortare än ett däckbytesintervall.
+  const tireMonthly = tireMonthlyCosts(assumptions);
+  const tires = buildConstantSeries(months, (winterTiresBundled ? 0 : tireMonthly.winter) + tireMonthly.summer);
 
   const loan = isLeasing ? null : loanSeries(financingMethod, price, months, assumptions.financing);
   const categorySeries = { energy, tax, insurance, service, tires };
@@ -352,6 +371,58 @@ function methodResult({ financingMethod, price, months, assumptions, monthlyDisc
 }
 
 /**
+ * "Jämförbart leasingpris": vad en privatleasingoffert på samma bil skulle annonsera för avgift,
+ * uppställt som svenska leasingannonser brukar vara. Listpriset är det avgiften förväntas täcka -
+ * värdeminskning, kapitalkostnad (inkl. låneränta om bilen är finansierad), förväntad haveririsk,
+ * service samt sommardäcken - medan resten (vinterdäck, försäkring, bränsle/el och fordonsskatt)
+ * betalas vid sidan av. Det gör leasingposten jämförbar med ett riktigt annonspris i stället för
+ * med en TCO-summa, som ingen återförsäljare visar.
+ *
+ * Posterna är den valda finansieringsmetodens egna kategorier, så priset beskriver samma bil och
+ * samma antaganden som resten av resultatet - men det är oberoende av leasingavgiften i
+ * Privatleasing-fältet (den styr bara kalkylen när leasing faktiskt är valt). Eftersom
+ * listpris + parentes alltid summerar till månadskostnaden ovan kan de två läsas tillsammans.
+ *
+ * Följer leasingprofilen: är service eller vinterdäcken inte inbakade i avtalet flyttas de
+ * posterna till parentesen. Med standardantagandena (service ingår, vinterdäck ingår inte) blir
+ * listpriset alltså precis värdeminskning + kapitalkostnad + haveririsk + service + sommardäck.
+ * @param {object} input - { result, assumptions }
+ * @returns {{monthly: number, items: object, extras: object, tireMonthly: {winter: number,
+ *   summer: number}}}
+ */
+function buildComparableLeasingPrice({ result, assumptions }) {
+  const { serviceIncluded, winterTiresIncluded } = assumptions.financing.leasing;
+  const { categoryMonthly, risk } = result;
+  const tireMonthly = tireMonthlyCosts(assumptions);
+  const service = categoryMonthly.service ?? 0;
+
+  const items = {
+    depreciation: categoryMonthly.depreciation ?? 0,
+    // Kapitalkostnaden är alternativkostnaden på eget kapital, låneräntan tillkommer när bilen
+    // är finansierad - tillsammans är de kostnaden för kapitalet i bilen, som leasingbolaget bär.
+    capital: (categoryMonthly.kapitalkostnad ?? 0) + (categoryMonthly.laneranta ?? 0),
+    // Leasingbolaget bär haveririsken och prissätter den: den förväntade riskkostnaden, dvs.
+    // skillnaden mellan den riskjusterade och den deterministiska månadskostnaden.
+    risk: risk ? risk.riskPremium : 0,
+    service: serviceIncluded ? service : 0,
+    tires: tireMonthly.summer + (winterTiresIncluded ? tireMonthly.winter : 0),
+  };
+  const extras = {
+    tires: winterTiresIncluded ? 0 : tireMonthly.winter,
+    insurance: categoryMonthly.insurance ?? 0,
+    energy: categoryMonthly.energy ?? 0,
+    tax: categoryMonthly.tax ?? 0,
+    service: serviceIncluded ? 0 : service,
+  };
+  return {
+    monthly: Object.values(items).reduce((a, b) => a + b, 0),
+    items,
+    extras,
+    tireMonthly,
+  };
+}
+
+/**
  * Beräknar jämförbar månadskostnad (nivålagd annuitet av nuvärdet) för ett fordon, given
  * finansieringsmetod och antaganden. Inkluderar en Monte Carlo-baserad haveririsk om
  * assumptions.risk.enabled är true, och (som standard) samma månadskostnad för de andra
@@ -364,7 +435,8 @@ function methodResult({ financingMethod, price, months, assumptions, monthlyDisc
  * @returns {object} Resultat med kategoriuppdelad deterministisk månadskostnad, ev. riskstatistik,
  *   (för ägda bilar) restvärde vid ägandeperiodens slut och förlorat värde sedan köpet,
  *   bilens pris i kalkylen (vehiclePrice/priceSource) samt comparison: en post per övrigt
- *   finansieringssätt med samma riskbehandling.
+ *   finansieringssätt med samma riskbehandling. leasingPrice: det jämförbara leasingpriset för
+ *   ett ägt finansieringssätt (se buildComparableLeasingPrice), null vid leasing.
  */
 export function computeTco({ price, months, financingMethod, assumptions, compareMethods = true }) {
   const { price: vehiclePrice, source: priceSource } = resolveVehiclePrice({ price, financingMethod, assumptions });
@@ -401,6 +473,13 @@ export function computeTco({ price, months, financingMethod, assumptions, compar
     pathData,
   });
 
+  // Det jämförbara leasingpriset hör till ett ÄGT finansieringssätt: väljer man privatleasing är
+  // det den riktiga offerten som gäller, och då finns ingen "motsvarande" avgift att visa.
+  const leasingPrice =
+    financingMethod === "leasing"
+      ? null
+      : buildComparableLeasingPrice({ result, assumptions: methodAssumptions });
+
   const comparison = compareMethods
     ? FINANCING_METHODS.filter((method) => method !== financingMethod).map((method) => {
         const other = methodResult({
@@ -428,6 +507,7 @@ export function computeTco({ price, months, financingMethod, assumptions, compar
     vehiclePrice,
     priceSource,
     comparison,
+    leasingPrice,
     // Hur värdeminskningskurvan kom till: om ett restvärde angetts och om det i så fall gick
     // att nå (ett restvärde över inköpspriset är inte möjligt). rateMultiplier = kurvans
     // justeringsfaktor mot standardkurvan (1 = oförändrad).
@@ -576,9 +656,8 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
   })).filter((m) => m.ageYears !== null);
 
   const energyMonthly = computeEnergyMonthly(assumptions.annualMileageKm, assumptions.running);
-  const winterIntervalMonths = Math.round(assumptions.tires.winterIntervalYears * 12);
-  const summerIntervalMonths = Math.round(assumptions.tires.summerIntervalYears * 12);
-  const winterTiresMonthly = winterIntervalMonths > 0 ? assumptions.tires.setCost / winterIntervalMonths : 0;
+  // Däckkostnaden: samma månadssnitt över bytesintervallet som i TCO-kalkylen (se tireMonthlyCosts).
+  const { winter: winterTiresMonthly, summer: summerTiresMonthly } = tireMonthlyCosts(assumptions);
   // Leasingavgiften bakar ofta in service/vinterdäck - dubbelräkna inte dem i leasingkostnaden.
   const serviceBundled = isLeasing && assumptions.financing.leasing.serviceIncluded;
   const winterTiresBundled = isLeasing && assumptions.financing.leasing.winterTiresIncluded;
@@ -586,7 +665,6 @@ export function computeLifetimeMonthlyCosts({ price, months, financingMethod, as
 
   const loan = loanSeries(baseMethod, vehiclePrice, months, assumptions.financing);
   const leasingCf = isLeasing ? financingCashflow("leasing", vehiclePrice, months, assumptions.financing) : null;
-  const summerTiresMonthly = summerIntervalMonths > 0 ? assumptions.tires.setCost / summerIntervalMonths : 0;
   const winterTiresMonthlyNonBundled = winterTiresBundled ? summerTiresMonthly : winterTiresMonthly + summerTiresMonthly;
 
   // Kapitalkostnad utanför din ägandeperiod: samma finansieringsmetod som valts (utom leasing,

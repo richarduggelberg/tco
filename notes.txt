@@ -102,6 +102,39 @@ Known caveats / not done:
   standard Chart.js pattern (y.stacked: true + per-dataset stack + fill: true) and the
   underlying data is covered by tests, but a quick manual look in a browser is recommended.
 
+Comparable leasing price instead of a leasing TCO number (result card):
+- The comparison line no longer lists privatleasing as a monthly TCO - that number cannot be
+  compared to anything, since no dealer advertises it. The leased car is expressed the way a
+  Swedish leasing ad reads: a LISTPRIS the fee is expected to cover - värdeminskning +
+  kapitalkostnad (incl. låneränta for a financed car) + förväntad haveririsk + service +
+  sommardäck - with what is paid on the side (vinterdäck, försäkring, bränsle/el, fordonsskatt) in
+  a parenthesis next to it, i.e. "5 342 kr/mån + (vinterdäck 125 kr, försäkring 400 kr, ...)".
+- The items come from the SELECTED method's own categories, so the price describes the same car
+  and the same assumptions as the rest of the result. It is independent of the leasing fee field:
+  that fee only drives the calculation when leasing is actually selected, so the row is now
+  meaningful even though the Privatleasing fieldset is hidden (before, the row silently used the
+  4 500 kr default fee - see the caveat in the previous section).
+- The service/vinterdäck bundle flags move those two items between the price and the parenthesis,
+  so listpris + parenthesis always sums EXACTLY to the headline number above it (tested with and
+  without risk, for all three owned methods). Standard assumptions (service ingår, vinterdäck ingår
+  inte) give exactly the composition above.
+- comparison rows still contain the leasing row (unchanged shape, existing tests untouched); the UI
+  just does not render it in the "Andra finansieringssätt" sentence any more.
+- The note directly above it shows the monthly average tire cost, because the leasing price splits
+  precisely those two numbers (sommardäck into the listpris, vinterdäck into the parenthesis).
+
+Tires are periodized over the tire interval everywhere (was: a lump sum at each change):
+- buildPeriodicCostSeries is gone; its only user was the tire category. Each set is now a constant
+  setCost / intervalMonths, i.e. the same average the lifetime chart already drew. Before this the
+  two disagreed for any holding period shorter than an interval: 3 years with the default 5-year
+  summer interval reported 0 kr/mån in the breakdown while the chart drew 100 kr/mån, and the
+  headline therefore depended on whether a change happened to fall inside the holding period.
+- Consequence, intended: a short holding period now carries the amortized tire cost instead of
+  zero, so the TCO for e.g. 3 years is somewhat higher (däck goes from 0 to 225 kr/mån with the
+  default 6 000 kr / 4 / 5 years). Tires wear at the same rate regardless of when the car is sold,
+  and the depreciation curve does not adjust the value for tire condition, so charging the average
+  is the consistent choice - and it is what makes the chart, the breakdown and the TCO agree.
+
 Improvement ideas (recorded after the nypris/restvärde work - none of these are done):
 
 1. Input validation: three paths produce silent garbage today

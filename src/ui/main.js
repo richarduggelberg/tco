@@ -1,6 +1,14 @@
 import { computeTco, computeLifetimeMonthlyCosts, resolveDepreciation, resolveVehiclePrice, assessPurchasePrice, modelImpliedNewPrice } from "../calc/tco.js";
 import { defaultAssumptions, fuelTypeDefaults } from "../data/assumptions.js";
-import { formatCurrency, categoryLabels, financingLabels, formatThousands, parseThousands } from "./format.js";
+import {
+  formatCurrency,
+  categoryLabels,
+  financingLabels,
+  leasingPriceItemLabels,
+  leasingExtraLabels,
+  formatThousands,
+  parseThousands,
+} from "./format.js";
 
 const form = document.getElementById("tco-form");
 const fuelTypeSelect = document.getElementById("fuelType");
@@ -16,6 +24,8 @@ const verdictNote = document.getElementById("purchase-verdict");
 const priceField = document.getElementById("price-field");
 const leasingPriceNote = document.getElementById("leasing-price-note");
 const comparisonNote = document.getElementById("result-comparison");
+const resultTiresEl = document.getElementById("result-tires");
+const resultLeasingPriceEl = document.getElementById("result-leasing-price");
 
 const resultsSection = document.getElementById("results");
 const resultMonthlyEl = document.getElementById("result-monthly");
@@ -503,11 +513,13 @@ function renderResults(result, financingMethod) {
   }
 
   // Jämförelse med de andra finansieringssätten, räknade med samma antaganden och samma
-  // riskbanor (så att siffrorna är jämförbara med månadskostnaden ovan).
+  // riskbanor (så att siffrorna är jämförbara med månadskostnaden ovan). Privatleasing visas inte
+  // här: en leasingpost i samma rad skulle vara en TCO-summa, och en sådan visar ingen
+  // återförsäljare. Den visas i stället som ett jämförbart leasingpris nedan.
   if (result.comparison?.length) {
-    const rows = result.comparison.map(
-      (row) => `${financingLabels[row.method] ?? row.method} ${formatCurrency(row.monthlyCost)}`
-    );
+    const rows = result.comparison
+      .filter((row) => row.method !== "leasing")
+      .map((row) => `${financingLabels[row.method] ?? row.method} ${formatCurrency(row.monthlyCost)}`);
     const assumedPrice =
       result.priceSource === "leasingavgift"
         ? ` Övriga sätt är räknade på det antagna priset ${formatCurrency(result.vehiclePrice)}.`
@@ -517,6 +529,34 @@ function renderResults(result, financingMethod) {
     comparisonNote.classList.remove("hidden");
   } else {
     comparisonNote.classList.add("hidden");
+  }
+
+  // Däckkostnaden är periodiserad över däckens livslängd (se tireMonthlyCosts i calc/tco.js) och
+  // därför densamma oavsett innehavstid. Den visas före leasingpriset, eftersom den är summan av
+  // de två däckposterna där: sommardäcken i listpriset, vinterdäcken i parentesen.
+  if (result.leasingPrice) {
+    const { monthly, items, extras, tireMonthly } = result.leasingPrice;
+    showNote(
+      resultTiresEl,
+      `Däck, månadssnitt över däckens livslängd: ${formatCurrency(items.tires + extras.tires)}/mån ` +
+        `(sommardäck ${formatCurrency(tireMonthly.summer)}, vinterdäck ${formatCurrency(tireMonthly.winter)})`
+    );
+
+    const extrasText = Object.entries(extras)
+      .filter(([, amount]) => amount > 0)
+      .map(([key, amount]) => `${leasingExtraLabels[key] ?? key} ${formatCurrency(amount)}`);
+    const includedText = Object.entries(items)
+      .filter(([, amount]) => amount > 0)
+      .map(([key]) => (key === "tires" ? (extras.tires > 0 ? "sommardäck" : "däck") : leasingPriceItemLabels[key] ?? key));
+    showNote(
+      resultLeasingPriceEl,
+      `Jämförbart leasingpris: ${formatCurrency(monthly)}/mån` +
+        (extrasText.length ? ` + (${extrasText.join(", ")})` : "") +
+        `. Listpriset täcker ${includedText.join(", ")}.`
+    );
+  } else {
+    resultTiresEl.classList.add("hidden");
+    resultLeasingPriceEl.classList.add("hidden");
   }
 
   breakdownBody.innerHTML = "";

@@ -349,8 +349,10 @@
           Körsträckan innan köpet antas vara den angivna baslinjen (eftersom den är okänd). Modellen
           antar att ett ekonomiskt totalhaveri innebär att en likvärdig bil (samma kalenderålder och
           körmönster som vid det ursprungliga köpet) köps in igen, vilket återställer både värde och
-          riskklocka till utgångsläget för resten av innehavsperioden. Däckkostnaden gäller inte vinterdäck
-          om "Vinterdäck ingår i avgiften" är ikryssat för leasing.</p>
+          riskklocka till utgångsläget för resten av innehavsperioden. Kostnaden per däckuppsättning slås ut
+          jämnt över bytesintervallet i stället för att belasta den månad däcken byts, så däckkostnaden är
+          densamma oavsett hur länge bilen ägs (den gäller inte vinterdäck om "Vinterdäck ingår i avgiften"
+          är ikryssat för leasing).</p>
         <p class="note">Värdeminskningstakten skalar hela kurvan (100% = standardkurvan, 150% = 50%
           snabbare värdetapp) - bilar värdeminskar olika snabbt beroende på märke, modell, skick och
           efterfrågan. Faktorn används bara när varken ett restvärde eller ett nypris är ifyllt i
@@ -369,6 +371,8 @@
         <div class="risk-interval" id="result-interval"></div>
         <div class="residual-note hidden" id="result-residual"></div>
         <div class="comparison-note hidden" id="result-comparison"></div>
+        <div class="comparison-note result-note-followup hidden" id="result-tires"></div>
+        <div class="comparison-note result-note-followup hidden" id="result-leasing-price"></div>
       </div>
 
       <div class="card">

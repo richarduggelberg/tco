@@ -48,3 +48,21 @@ export const financingLabels = {
   bolan: "Bolån",
   leasing: "Privatleasing",
 };
+
+/** Beståndsdelarna i det jämförbara leasingpriset, som de förklaras i resultatet. */
+export const leasingPriceItemLabels = {
+  depreciation: "värdeminskning",
+  capital: "kapitalkostnad",
+  risk: "haveririsk",
+  service: "service",
+  tires: "sommardäck",
+};
+
+/** Kostnader som ligger utanför ett jämförbart leasingpris (parentesen i resultatet). */
+export const leasingExtraLabels = {
+  tires: "vinterdäck",
+  insurance: "försäkring",
+  energy: "bränsle/el",
+  tax: "fordonsskatt",
+  service: "service",
+};

@@ -113,6 +113,20 @@ test("computeTco with leasing and winterTiresIncluded reduces the tires cost vs.
   assert.ok(resultWith.categoryMonthly.tires < resultWithout.categoryMonthly.tires);
 });
 
+test("computeTco periodizes the tires over their own interval, not over the holding period", () => {
+  const assumptions = cloneAssumptions();
+  assumptions.risk.enabled = false;
+  // Två innehavstider som båda är kortare än däckbytesintervallen (4 resp. 5 år): däcken
+  // förbrukas i samma takt ändå, så månadssnittet ska vara detsamma.
+  const short = computeTco({ price: 300000, months: 24, financingMethod: "kontant", assumptions });
+  const long = computeTco({ price: 300000, months: 120, financingMethod: "kontant", assumptions });
+  const expected =
+    assumptions.tires.setCost / (assumptions.tires.winterIntervalYears * 12) +
+    assumptions.tires.setCost / (assumptions.tires.summerIntervalYears * 12);
+  assert.ok(Math.abs(short.categoryMonthly.tires - expected) < 1e-9);
+  assert.ok(Math.abs(long.categoryMonthly.tires - expected) < 1e-9);
+});
+
 test("computeTco applies helförsäkring once the car crosses helStartYears", () => {
   const assumptions = cloneAssumptions();
   assumptions.risk.enabled = false;

@@ -155,6 +155,13 @@ details summary {
   border-top: 1px solid var(--border);
 }
 
+/* Notrader som fortsätter under jämförelseraden - bara den första har en avgränsande linje. */
+.result-note-followup {
+  margin-top: 0.25rem;
+  padding-top: 0;
+  border-top: none;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
