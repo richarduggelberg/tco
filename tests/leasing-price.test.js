@@ -25,7 +25,7 @@ test("computeTco has no comparable leasing price when leasing is the selected me
   assert.equal(result.leasingPrice, null);
 });
 
-test("the comparable leasing price is värdeminskning + kapitalkostnad + risk + service + sommardäck", () => {
+test("the comparable leasing price is värdeminskning + kapitalkostnad + risk + helförsäkring + service + sommardäck", () => {
   const result = computeTco(ownedTco());
   const { monthly, items } = result.leasingPrice;
   const assumptions = defaultAssumptions;
@@ -39,7 +39,40 @@ test("the comparable leasing price is värdeminskning + kapitalkostnad + risk + 
   assert.ok(Math.abs(items.capital - result.categoryMonthly.kapitalkostnad) < 1e-9);
   // Vinterdäcken ligger utanför priset (och i parentesen) med standardantagandena.
   assert.ok(Math.abs(result.leasingPrice.extras.tires - assumptions.tires.setCost / (assumptions.tires.winterIntervalYears * 12)) < 1e-9);
-  assert.ok(Math.abs(monthly - (items.depreciation + items.capital + items.risk + items.service + items.tires)) < 1e-9);
+  // Bilen köps ny och ägs i 5 år, så den hinner in i helförsäkringsperioden: en del av
+  // försäkringen ligger då i priset, resten i parentesen.
+  assert.ok(items.insurance > 0);
+  assert.ok(result.leasingPrice.extras.insurance > 0);
+  const composition = items.depreciation + items.capital + items.risk + items.insurance + items.service + items.tires;
+  assert.ok(Math.abs(monthly - composition) < 1e-9);
+});
+
+test("the helförsäkring part of the insurance moves into the price, the halv part stays outside", () => {
+  // Ny bil ägd i 60 månader: halvförsäkring till och med månad 36, helförsäkring därefter.
+  const result = computeTco(ownedTco({ months: 60 }));
+  const { items, extras } = result.leasingPrice;
+  assert.ok(items.insurance > 0, "helförsäkringsdelen ska ligga i priset");
+  assert.ok(extras.insurance > 0, "halvförsäkringsdelen ska ligga i parentesen");
+  // Delarna är komplement av varandra, så de summerar till försäkringskategorin i uppdelningen.
+  assert.ok(Math.abs(items.insurance + extras.insurance - result.categoryMonthly.insurance) < 1e-9);
+});
+
+test("a lease-sized car that never reaches helförsäkring keeps the whole insurance in the parenthesis", () => {
+  // Ny bil ägd i 2 år: hela innehavstiden ligger i halvförsäkringen (vagnskadegarantin).
+  const result = computeTco(ownedTco({ months: 24 }));
+  const { items, extras } = result.leasingPrice;
+  assert.equal(items.insurance, 0);
+  assert.ok(Math.abs(extras.insurance - result.categoryMonthly.insurance) < 1e-9);
+});
+
+test("a car held entirely inside the helförsäkring period moves all of the insurance into the price", () => {
+  const assumptions = cloneAssumptions((a) => {
+    a.ageAtPurchaseYears = 4; // kalenderålder 4 -> 7 år under innehavstiden, helt inom 3-8 år
+  });
+  const result = computeTco(ownedTco({ months: 36, assumptions }));
+  const { items, extras } = result.leasingPrice;
+  assert.ok(Math.abs(items.insurance - result.categoryMonthly.insurance) < 1e-9);
+  assert.ok(Math.abs(extras.insurance) < 1e-9);
 });
 
 test("the comparable leasing price plus its parenthesis equals the headline monthly cost", () => {

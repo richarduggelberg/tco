@@ -54,6 +54,7 @@ export const leasingPriceItemLabels = {
   depreciation: "värdeminskning",
   capital: "kapitalkostnad",
   risk: "haveririsk",
+  insurance: "helförsäkring",
   service: "service",
   tires: "sommardäck",
 };
@@ -61,7 +62,7 @@ export const leasingPriceItemLabels = {
 /** Kostnader som ligger utanför ett jämförbart leasingpris (parentesen i resultatet). */
 export const leasingExtraLabels = {
   tires: "vinterdäck",
-  insurance: "försäkring",
+  insurance: "halvförsäkring",
   energy: "bränsle/el",
   tax: "fordonsskatt",
   service: "service",

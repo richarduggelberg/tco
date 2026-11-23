@@ -187,14 +187,20 @@ export function modelImpliedNewPrice({ price, assumptions }) {
 }
 
 /**
+ * Om bilen har helförsäkring vid en given kalenderålder (sedan tillverkning) - annars
+ * halvförsäkring. En ny bil ligger utanför helförsäkringsperioden (vagnskadegarantin täcker de
+ * första åren), och en riktigt gammal bil hamnar tillbaka i halvförsäkring.
+ */
+function isHelInsuranceAge(calendarAgeYears, insurance) {
+  return calendarAgeYears >= insurance.helStartYears && calendarAgeYears < insurance.helEndYears;
+}
+
+/**
  * Försäkringskostnad för en given månad, baserat på bilens kalenderålder (sedan
  * tillverkning). Växlar mellan halv- och helförsäkring enligt insurance.helStartYears/helEndYears.
  */
 function insuranceMonthlyCost(calendarAgeYears, insurance) {
-  if (calendarAgeYears >= insurance.helStartYears && calendarAgeYears < insurance.helEndYears) {
-    return insurance.helMonthly;
-  }
-  return insurance.halvMonthly;
+  return isHelInsuranceAge(calendarAgeYears, insurance) ? insurance.helMonthly : insurance.halvMonthly;
 }
 
 /**
@@ -263,7 +269,7 @@ export const FINANCING_METHODS = ["kontant", "billan", "bolan", "leasing"];
  * @param {object} input - { financingMethod, price, months, assumptions, monthlyDiscountRate,
  *   depreciation, energyMonthly, pathData }
  * @returns {{categoryMonthly: object, deterministicTotal: number, risk: object|null,
- *   residualValue: number|null, valueLost: number|null}}
+ *   residualValue: number|null, valueLost: number|null, helInsuranceMonthly: number}}
  */
 function methodResult({ financingMethod, price, months, assumptions, monthlyDiscountRate, depreciation, energyMonthly, pathData }) {
   const { yearlyRates, ageAtPurchaseMonths, ageRateMultiplier } = depreciation;
@@ -281,6 +287,12 @@ function methodResult({ financingMethod, price, months, assumptions, monthlyDisc
   );
   const insurance = buildSeriesFromFunction(months, (t) =>
     insuranceMonthlyCost((ageAtPurchaseMonths + t) / 12, assumptions.insurance)
+  );
+  // Den del av försäkringen som ligger i helförsäkringsperioden, som en egen serie: den lyfts in
+  // i det jämförbara leasingpriset (se buildComparableLeasingPrice). Halv- och heldelen är
+  // komplement av varandra, så de summerar alltid till försäkringskategorin ovan.
+  const helInsurance = buildSeriesFromFunction(months, (t) =>
+    isHelInsuranceAge((ageAtPurchaseMonths + t) / 12, assumptions.insurance) ? assumptions.insurance.helMonthly : 0
   );
   const service = buildConstantSeries(months, serviceBundled ? 0 : assumptions.running.serviceMonthly);
 
@@ -331,6 +343,10 @@ function methodResult({ financingMethod, price, months, assumptions, monthlyDisc
     categoryMonthly[name] = levelMonthlyPayment(npv, monthlyDiscountRate, months);
   }
   const deterministicTotal = Object.values(categoryMonthly).reduce((a, b) => a + b, 0);
+  // Helförsäkringsdelen nivålagd för sig (nivåläggningen är linjär, så hel + halv = försäkringen).
+  // || 0 rensar bort negativ nolla när bilen aldrig hinner in i helförsäkringsperioden.
+  const helInsuranceMonthly =
+    levelMonthlyPayment(presentValue(helInsurance, monthlyDiscountRate), monthlyDiscountRate, months) || 0;
 
   let risk = null;
   if (assumptions.risk.enabled && !isLeasing && pathData) {
@@ -367,16 +383,17 @@ function methodResult({ financingMethod, price, months, assumptions, monthlyDisc
     };
   }
 
-  return { categoryMonthly, deterministicTotal, risk, residualValue, valueLost };
+  return { categoryMonthly, deterministicTotal, risk, residualValue, valueLost, helInsuranceMonthly };
 }
 
 /**
  * "Jämförbart leasingpris": vad en privatleasingoffert på samma bil skulle annonsera för avgift,
  * uppställt som svenska leasingannonser brukar vara. Listpriset är det avgiften förväntas täcka -
  * värdeminskning, kapitalkostnad (inkl. låneränta om bilen är finansierad), förväntad haveririsk,
- * service samt sommardäcken - medan resten (vinterdäck, försäkring, bränsle/el och fordonsskatt)
- * betalas vid sidan av. Det gör leasingposten jämförbar med ett riktigt annonspris i stället för
- * med en TCO-summa, som ingen återförsäljare visar.
+ * den del av försäkringen som är helförsäkring, service samt sommardäcken - medan resten
+ * (halvförsäkringen, vinterdäck, bränsle/el och fordonsskatt) betalas vid sidan av. Det gör
+ * leasingposten jämförbar med ett riktigt annonspris i stället för med en TCO-summa, som ingen
+ * återförsäljare visar.
  *
  * Posterna är den valda finansieringsmetodens egna kategorier, så priset beskriver samma bil och
  * samma antaganden som resten av resultatet - men det är oberoende av leasingavgiften i
@@ -385,7 +402,8 @@ function methodResult({ financingMethod, price, months, assumptions, monthlyDisc
  *
  * Följer leasingprofilen: är service eller vinterdäcken inte inbakade i avtalet flyttas de
  * posterna till parentesen. Med standardantagandena (service ingår, vinterdäck ingår inte) blir
- * listpriset alltså precis värdeminskning + kapitalkostnad + haveririsk + service + sommardäck.
+ * listpriset alltså precis värdeminskning + kapitalkostnad + haveririsk + helförsäkring + service +
+ * sommardäck.
  * @param {object} input - { result, assumptions }
  * @returns {{monthly: number, items: object, extras: object, tireMonthly: {winter: number,
  *   summer: number}}}
@@ -395,6 +413,11 @@ function buildComparableLeasingPrice({ result, assumptions }) {
   const { categoryMonthly, risk } = result;
   const tireMonthly = tireMonthlyCosts(assumptions);
   const service = categoryMonthly.service ?? 0;
+  // Bara helförsäkringsdelen: en leasingbil är normalt ny och ligger då i halvförsäkring, men den
+  // bil som jämförs kan ha hunnit in i helförsäkringsperioden - den kostnaden bär bilen oavsett
+  // finansiering, så den hör till priset medan halvförsäkringen redovisas vid sidan av.
+  const helInsurance = result.helInsuranceMonthly ?? 0;
+  const insurance = categoryMonthly.insurance ?? 0;
 
   const items = {
     depreciation: categoryMonthly.depreciation ?? 0,
@@ -404,12 +427,13 @@ function buildComparableLeasingPrice({ result, assumptions }) {
     // Leasingbolaget bär haveririsken och prissätter den: den förväntade riskkostnaden, dvs.
     // skillnaden mellan den riskjusterade och den deterministiska månadskostnaden.
     risk: risk ? risk.riskPremium : 0,
+    insurance: helInsurance,
     service: serviceIncluded ? service : 0,
     tires: tireMonthly.summer + (winterTiresIncluded ? tireMonthly.winter : 0),
   };
   const extras = {
     tires: winterTiresIncluded ? 0 : tireMonthly.winter,
-    insurance: categoryMonthly.insurance ?? 0,
+    insurance: insurance - helInsurance,
     energy: categoryMonthly.energy ?? 0,
     tax: categoryMonthly.tax ?? 0,
     service: serviceIncluded ? 0 : service,
