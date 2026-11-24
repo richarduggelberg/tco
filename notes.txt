@@ -122,15 +122,22 @@ Comparable leasing price instead of a leasing TCO number (result card):
   just does not render it in the "Andra finansieringssätt" sentence any more.
 - The note directly above it shows the monthly average tire cost, because the leasing price splits
   precisely those two numbers (sommardäck into the listpris, vinterdäck into the parenthesis).
-- An old enough car also carries helförsäkring, and that part now goes into the listpris too: a
-  leasing company requires (at least) halvförsäkring and a leased car is normally new, so the
-  halv part stays in the parenthesis while the months the COMPARED car actually spends in the
-  helförsäkring window (insurance.helStartYears..helEndYears) are added to the price, levelized
-  over exactly those months. The split is built from the same monthly series as the insurance
-  category, so hel + halv is the insurance line in the breakdown to the last decimal and
-  listpris + parenthesis still sums exactly to the headline. A car that never reaches the window
-  is unchanged - the parenthesis then just reads "halvförsäkring". A levelized all-zero hel series
-  comes out as -0, which is normalized so the item reads 0 and not "-0 kr".
+- An old enough car also carries helförsäkring, but only the SURCHARGE over halvförsäkring goes
+  into the listpris. A lease assumes halvförsäkring (a leased car is normally new) and that
+  halvförsäkring is paid on the side whether the car actually carries hel or not, so a 4-year-old
+  car sitting in helförsäkring the whole period with 600 kr hel against 400 kr halv puts 200 kr in
+  the price and 400 kr in the parenthesis - not 600 kr in the price and nothing on the side. Both
+  splits sum to the same number (the insurance category in the breakdown), so this is about WHERE
+  the cost is shown: the price carries what this particular car needs beyond the baseline a lease
+  assumes, and listpris + parenthesis still sums exactly to the headline.
+- The surcharge series is (helMonthly - halvMonthly) for the months inside
+  insurance.helStartYears..helEndYears, levelized over the WHOLE holding period (two years of
+  helförsäkring inside a five-year hold is about 98 kr/mån, not 250). A car that never reaches the
+  window puts 0 in the price, and the parenthesis then just reads "halvförsäkring". A levelized
+  all-zero surcharge comes out as -0, which is normalized so the item reads 0 and not "-0 kr".
+- The first version of this moved the whole helförsäkring premium into the price (600 in the
+  price, 0 on the side). It balanced, but it credited the price with the halvförsäkring that the
+  lease already requires - corrected the same day.
 
 Tires are periodized over the tire interval everywhere (was: a lump sum at each change):
 - buildPeriodicCostSeries is gone; its only user was the tire category. Each set is now a constant

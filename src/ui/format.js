@@ -54,7 +54,7 @@ export const leasingPriceItemLabels = {
   depreciation: "värdeminskning",
   capital: "kapitalkostnad",
   risk: "haveririsk",
-  insurance: "helförsäkring",
+  insurance: "tillägg för helförsäkring",
   service: "service",
   tires: "sommardäck",
 };
